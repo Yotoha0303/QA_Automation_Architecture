@@ -232,7 +232,7 @@ Prism 是一个基于 OpenAPI 契约规范的 Mock 引擎。
 
 ### 2. PostgreSQL 16 数据库 (端口 5432)
 
-PostgreSQL 是数据库协议服务，不能直接用网页浏览器访问。
+PostgreSQL 是数据库协议服务，不能直接用网页浏览器访问。容器配置了 `./sql:/docker-entrypoint-initdb.d:ro` 自动初始化挂载，首次拉起时会自动执行 `sql/init.sql` 创建测试表结构与预置种子数据（包含 `users`、`test_cases`、`test_executions`）。
 
 - **连接信息**：
   - **主机 (Host)**: `localhost` (容器内互联用 `qa-postgres`)
@@ -242,9 +242,13 @@ PostgreSQL 是数据库协议服务，不能直接用网页浏览器访问。
   - **数据库名 (Database)**: `qa_testdb`
 - **使用客户端连接**：
   在 Navicat、DBeaver、DataGrip 或 VS Code Database 插件中新建 PostgreSQL 连接，填入上述信息即可查看测试数据表与持久化记录。
-- **终端交互查询**：
+- **预置数据与 SQL 查询**：
   ```bash
-  docker compose -f docker-compose.infra.yml exec postgres-db psql -U qa_admin -d qa_testdb -c "SELECT 1;"
+  # 查询预置的测试人员数据
+  docker compose -f docker-compose.infra.yml exec postgres-db psql -U qa_admin -d qa_testdb -c "SELECT * FROM users;"
+
+  # 查询预置的自动化测试用例清单
+  docker compose -f docker-compose.infra.yml exec postgres-db psql -U qa_admin -d qa_testdb -c "SELECT case_key, title, suite_type, priority FROM test_cases;"
   ```
 
 ---
@@ -329,12 +333,35 @@ def test_mock_get_user_info():
     assert resp.json().get("username") == "test_engineer"
 ```
 
-### 2. Web 自动化测试 (`tests/web/`)
-基于 Playwright 原生夹具，支持多浏览器无头并发执行：
+### 2. Web 自动化测试与 Page Object Model (POM) (`tests/web/`)
+基于 Playwright 原生夹具，支持多浏览器无头并发执行。遵循 **Page Object Model (POM)** 企业级设计模式，实现页面定位器、交互逻辑与用例业务断言的彻底解耦：
+
+- **目录结构**：
+  - `tests/web/pages/base_page.py`：页面基类，封装通用等待、导航与基础元素交互
+  - `tests/web/pages/playwright_home_page.py`：业务页面对象，封装特定页面的定位器（Locators）与用户行为方法
+  - `tests/web/test_web_sample.py`：测试用例，专注业务链路与断言
+
+- **POM 封装与调用范例**：
 ```python
-def test_playwright_web_navigation(page: Page):
-    page.goto("https://playwright.dev/")
-    expect(page).to_have_title(re.compile(r"Playwright"))
+# 1. 页面对象类定义 (playwright_home_page.py)
+class PlaywrightHomePage(BasePage):
+    URL = "https://playwright.dev/"
+    GET_STARTED_BUTTON = "text=Get started"
+
+    def navigate(self):
+        self.goto(self.URL)
+        return self
+
+    def click_get_started(self):
+        self.find(self.GET_STARTED_BUTTON).click()
+
+# 2. 测试用例调用 (test_web_sample.py)
+def test_playwright_web_pom_workflow(page: Page):
+    home_page = PlaywrightHomePage(page)
+    home_page.navigate()
+    home_page.verify_page_loaded()
+    home_page.click_get_started()
+    expect(page).to_have_url(re.compile(r"/docs/intro"))
 ```
 
 ### 3. 性能基线测试 (`tests/perf/load_test.js`)

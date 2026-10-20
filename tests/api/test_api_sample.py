@@ -42,3 +42,31 @@ def test_postgres_connection():
     cur.close()
     conn.close()
     assert result[0] == 1
+
+
+def test_postgres_init_schema_and_seed_data():
+    """验证挂载的数据库初始化 SQL 脚本执行与预置种子数据"""
+    host = "qa-postgres"
+    try:
+        conn = psycopg2.connect(
+            host=host, port=5432, user="qa_admin", password="QAPassword123!", dbname="qa_testdb", connect_timeout=3
+        )
+    except psycopg2.OperationalError:
+        conn = psycopg2.connect(
+            host="localhost", port=5432, user="qa_admin", password="QAPassword123!", dbname="qa_testdb", connect_timeout=3
+        )
+    cur = conn.cursor()
+    # 验证初始化的用户表数据
+    cur.execute("SELECT username, role FROM users WHERE id = 1001;")
+    user = cur.fetchone()
+    assert user is not None
+    assert user[0] == "test_engineer"
+    assert user[1] == "SDET"
+
+    # 验证初始化的测试用例清单表数据
+    cur.execute("SELECT COUNT(*) FROM test_cases;")
+    count = cur.fetchone()[0]
+    assert count >= 5
+    cur.close()
+    conn.close()
+

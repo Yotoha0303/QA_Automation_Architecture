@@ -22,8 +22,8 @@
 | 层级 | 工具与组件 | 实际部署形式 | 对应目录与配置文件 |
 | :--- | :--- | :--- | :--- |
 | **1. 宿主环境与桌面工具** | Wireshark, Apifox, VS Code, Docker | Windows / Linux 原生安装 | `scripts/setup_host_tools_windows.bat`<br>`scripts/setup_host_tools_linux.sh` |
-| **2. 测试编排与存储依赖** | PostgreSQL, 辅助 Mock 服务 (Prism), Allure Report 可视化报告服务 | 独立容器 | `docker-compose.infra.yml`, `mock-schemas/` |
-| **3. 自动化测试运行时** | Python 3.12+, Playwright, k6, apifox-cli | Dev Container 统一镜像 (Compose `test-runner` 服务) | `.devcontainer/Dockerfile`, `.devcontainer/devcontainer.json`, `docker-compose.infra.yml` |
+| **2. 测试编排与存储依赖** | PostgreSQL, 辅助 Mock 服务 (Prism), Allure Report 可视化报告服务 | 独立容器 | `docker-compose.infra.yml`, `mock-schemas/`, `sql/` |
+| **3. 自动化测试运行时** | Python 3.12+, Playwright (POM 架构), k6, apifox-cli | Dev Container 统一镜像 (Compose `test-runner` 服务) | `.devcontainer/Dockerfile`, `.devcontainer/devcontainer.json`, `docker-compose.infra.yml`, `tests/` |
 | **4. 移动端支撑层** | Appium Server + 宿主 ADB | 混合架构 | `scripts/start_host_adb.cmd`, `docker-compose.infra.yml` (`appium`, mobile profile), `tests/mobile/` |
 | **5. 缺陷管理** | Jira | 官方 SaaS / API Token 集成 | `config/jira_config.env.example`, `conftest.py` |
 | **6. 持续集成** | GitHub Actions | 远端托管 Runner / 混合 Runner | `.github/workflows/ci.yml` |
@@ -274,8 +274,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\3_verify_operational.ps1
 | | **apifox-cli** | `docker compose -f docker-compose.infra.yml exec test-runner apifox --version` | 输出 apifox 命令行版本号 |
 | **层级 4: 移动端支撑** | **宿主 ADB 5037 端口** | Windows: `Get-NetTCPConnection -LocalPort 5037 -State Listen`<br>Linux: `ss -tlpn \| grep 5037` | 存在监听在 `0.0.0.0:5037` 的记录 |
 | **层级 5: 缺陷管理** | **Jira 配置** | `cat config/jira_config.env` | 文件存在且包含 `JIRA_SERVER_URL` 等项 |
-| **层级 6: 自动化测试** | **API 测试** | `docker compose -f docker-compose.infra.yml exec test-runner pytest tests/api/ -v` | 输出 `3 passed in 0.xx s` |
-| | **Web Playwright** | `docker compose -f docker-compose.infra.yml exec test-runner pytest tests/web/ -v` | 输出 `1 passed in x.xx s` (Chromium 成功启动访问) |
+| **层级 6: 自动化测试** | **API 测试** | `docker compose -f docker-compose.infra.yml exec test-runner pytest tests/api/ -v` | 输出 `4 passed in 0.xx s` (含 Mock 契约与 PostgreSQL 种子数据校验) |
+| | **Web Playwright** | `docker compose -f docker-compose.infra.yml exec test-runner pytest tests/web/ -v` | 输出 `2 passed in x.xx s` (含基础渲染与 POM 模式端到端操作) |
 | | **k6 并发压测** | `docker compose -f docker-compose.infra.yml exec test-runner k6 run tests/perf/load_test.js` | 输出 `checks_succeeded: 100%`，`p(95)<500ms` 通过 |
 
 ---
