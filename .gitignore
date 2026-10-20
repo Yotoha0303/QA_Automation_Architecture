@@ -15,6 +15,7 @@ build/
 test-results/
 playwright-report/
 blob-report/
+dist/
 
 # Network caches
 .qa_network_profile
