@@ -8,6 +8,11 @@
 
 本项目基于**云原生容器化 + 宿主工具混合架构**设计，旨在解决企业级测试工具链环境冲突、真机调试隔离与 CI/CD 流水线标准化难题。
 
+> 📖 **更多参考文档**：
+> - 📋 [**项目主页与快速开始 (README.md)**](README.md)
+> - 🛠️ [**脚本使用手册 (脚本使用手册.md)**](脚本使用手册.md)
+> - 📝 [**版本更新日志 (CHANGELOG.md)**](CHANGELOG.md)
+
 本文档面向测试工程师、测试开发工程师（SDET）及运维人员，指导您在 Windows 或 Linux 环境下快速拉起测试环境并开展日常测试开发工作。
 
 ---
@@ -20,12 +25,14 @@
   - [1. Windows 快速开始](#1-windows-快速开始)
   - [2. Linux 快速开始](#2-linux-快速开始)
   - [3. 常用控制参数](#3-常用控制参数)
+  - [4. 环境生命周期闭环清理](#4-环境生命周期闭环清理)
 - [四、各个服务与工具的使用方法](#四各个服务与工具的使用方法)
   - [1. 辅助 Mock 服务 (Prism, 端口 4010)](#1-辅助-mock-服务-prism-端口-4010)
   - [2. PostgreSQL 16 数据库 (端口 5432)](#2-postgresql-16-数据库-端口-5432)
-  - [3. 自动化测试运行时 (Dev Container / qa-test-runner)](#3-自动化测试运行时-dev-container--qa-test-runner)
-  - [4. 移动端混合支撑层 (宿主 ADB + Appium Server)](#4-移动端混合支撑层-宿主-adb--appium-server)
-  - [5. Jira 缺陷管理自动提单](#5-jira-缺陷管理自动提单)
+  - [3. Allure Report 可视化报告服务 (端口 5050)](#3-allure-report-可视化报告服务-端口-5050)
+  - [4. 自动化测试运行时 (Dev Container / qa-test-runner)](#4-自动化测试运行时-dev-container--qa-test-runner)
+  - [5. 移动端混合支撑层 (宿主 ADB + Appium Server)](#5-移动端混合支撑层-宿主-adb--appium-server)
+  - [6. Jira 缺陷管理自动提单](#6-jira-缺陷管理自动提单)
 - [五、测试用例编写与执行指南](#五测试用例编写与执行指南)
 - [六、手动检查与验收 Checklist](#六手动检查与验收-checklist)
 - [七、常见问题与排坑指南 (FAQ)](#七常见问题与排坑指南-faq)
@@ -38,8 +45,8 @@
 | 架构层级 | 工具与组件 | 部署形态 | 对应配置文件 / 目录 | 职责与功能 |
 | :--- | :--- | :--- | :--- | :--- |
 | **层级 1: 宿主工具** | Wireshark, Apifox, VS Code, Git, Docker | 宿主原生安装 | `scripts/packages.json`<br>`scripts/setup_host_tools_*` | 底层网络抓包、API 调试协同、代码开发与容器引擎支撑 |
-| **层级 2: 存储与编排** | PostgreSQL 16, Prism HTTP Mock | Docker Compose 独立容器 | `docker-compose.infra.yml`<br>`mock-schemas/sample_api.yaml` | 测试数据持久化存储、依据 OpenAPI 契约动态模拟后端响应 |
-| **层级 3: 测试运行时** | Python 3.12+, Playwright, k6, apifox-cli | Dev Container 统一镜像 (`qa-runtime:local`) | `.devcontainer/Dockerfile`<br>`docker-compose.infra.yml` | 隔离测试依赖（浏览器内核、压测引擎、测试框架全部在容器内） |
+| **层级 2: 存储与编排** | PostgreSQL 16, Prism HTTP Mock, Allure Report | Docker Compose 独立容器 | `docker-compose.infra.yml`<br>`mock-schemas/sample_api.yaml`<br>`sql/init.sql` | 测试数据持久化存储、依据 OpenAPI 契约动态模拟后端响应、实时交互式报告大屏 |
+| **层级 3: 测试运行时** | Python 3.12+, Playwright (POM 架构), k6, apifox-cli | Dev Container 统一镜像 (`qa-runtime:local`) | `.devcontainer/Dockerfile`<br>`docker-compose.infra.yml`<br>`tests/` | 隔离测试依赖（浏览器内核、压测引擎、测试框架全部在容器内） |
 | **层级 4: 移动端支撑** | 宿主 ADB + Appium Server | 混合跨主机桥接模式 | `scripts/start_host_adb.cmd`<br>`docker-compose.infra.yml` (profile `mobile`) | 宿主暴露 5037 端口，容器内 Appium 桥接驱动真机或模拟器 |
 | **层级 5: 缺陷管理** | Jira SaaS REST API | 官方 REST SDK 集成 | `config/jira_config.env`<br>`conftest.py` | 测试用例失败时自动触发 REST API 提交缺陷单 |
 | **层级 6: 持续集成** | GitHub Actions / 本地全流程回归 | 容器化自动化运行 | `.github/workflows/ci.yml`<br>`start.bat` / `start.sh` | 执行 API、Web、k6 性能测试，生成测试评分表 |
@@ -253,7 +260,20 @@ PostgreSQL 是数据库协议服务，不能直接用网页浏览器访问。容
 
 ---
 
-### 3. 自动化测试运行时 (Dev Container / qa-test-runner)
+### 3. Allure Report 可视化报告服务 (端口 5050)
+
+项目中已集成基于 Docker 的 Allure Report 可视化服务容器 (`qa-allure`)，采用官方社区镜像 `frankescobar/allure-docker-service:latest`，并通过 `conftest.py` 全自动注入 `--alluredir=allure-results`。
+
+- **访问地址**：直接在浏览器中打开 👉 [http://localhost:5050](http://localhost:5050)
+- **核心特性**：
+  - **实时自动刷新**：容器每 3 秒检测一次 `./allure-results` 目录，一旦测试运行产生新的用例结果，大屏自动重新渲染。
+  - **总体指标大屏 (Overview)**：直观展示用例总数、通过率仪表盘、耗时曲线与历史趋势。
+  - **行为驱动层级 (Behaviors / Suites)**：按照用例套件与功能模块清晰展示测试层级。
+  - **详细错误堆栈与现场 (Timeline / Retries)**：直观查看每个失败用例的详细堆栈与断言失败现场。
+
+---
+
+### 4. 自动化测试运行时 (Dev Container / qa-test-runner)
 
 测试运行时容器包含了 Python 3.12+、Playwright 浏览器驱动内核（Chromium/Firefox/WebKit）、k6 压测引擎及 apifox-cli。
 
@@ -280,19 +300,6 @@ docker compose -f docker-compose.infra.yml exec test-runner bash
 
 ---
 
-### 4. Allure 测试可视化报告服务 (端口 5050)
-
-项目中已集成基于 Docker 的 Allure Report 可视化服务 (`qa-allure`)，并通过 `conftest.py` 全自动注入 `--alluredir=allure-results`。
-
-- **工作机制**：当您运行任何 pytest 测试用例（API、Web、移动端）时，测试结果数据均会自动输出至 `./allure-results`。Allure 容器会实时监听该目录，自动渲染交互式图形化报告。
-- **直观查看报告**：直接在浏览器中打开：👉 [http://localhost:5050](http://localhost:5050)
-- **报告特性**：
-  * **总体大屏 (Overview)**：通过率仪表盘、耗时曲线、测试用例统计。
-  * **行为驱动层级 (Behaviors / Suites)**：按照用例套件与功能模块清晰展示测试层级。
-  * **详细错误堆栈与步骤 (Timeline / Retries)**：直观查看每个失败用例的详细堆栈与断言失败现场。
-
----
-
 ### 5. 移动端混合支撑层 (宿主 ADB + Appium Server)
 
 本项目移动端采用混合架构：
@@ -306,7 +313,7 @@ docker compose -f docker-compose.infra.yml exec test-runner bash
 
 ---
 
-### 5. Jira 缺陷管理自动提单
+### 6. Jira 缺陷管理自动提单
 
 - 配置文件位于 `config/jira_config.env`（从 `config/jira_config.env.example` 复制生成）。
 - 配置项说明：
@@ -418,9 +425,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\3_verify_operational.ps1
 - **解决**：在启动时指定国内镜像源参数：`.\start.bat -Mirror cn` 或 `./start.sh --mirror cn`。脚本会自动切换 Ubuntu 清华源、npmmirror、清华 pip 源与 GitHub 代理。
 
 ### Q4: 如何完全停止并重置环境？
-- **解决**：执行以下命令停止全部容器并释放端口：
+- **解决**：推荐使用生命周期闭环脚本实现一键清理：
   ```bash
-  docker compose -f docker-compose.infra.yml down
+  # Windows
+  .\clean.bat       # 标准清理 (停止容器、释放网络与 ADB 端口、清除缓存)
+  .\clean.bat -v    # 深度清理 (同时清空 PostgreSQL 数据卷并重新初始化)
+
+  # Linux
+  ./clean.sh        # 标准清理
+  ./clean.sh -v     # 深度清理
   ```
 
 ---
