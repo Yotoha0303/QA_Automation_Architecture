@@ -1,0 +1,24 @@
+# 核心测试框架与插件
+pytest>=8.0.0
+pytest-html>=4.1.0
+pytest-xdist>=3.5.0
+pytest-rerunfailures>=14.0
+
+# Web 自动化与浏览器支持
+playwright>=1.48.0
+pytest-playwright>=0.5.0
+
+# 移动端测试客户端 (Appium)
+Appium-Python-Client>=4.0.0
+
+# HTTP 接口测试与工具
+requests>=2.32.0
+
+# PostgreSQL 数据库驱动
+psycopg2-binary>=2.9.9
+
+# Jira 缺陷管理与自动化提单 SDK
+jira>=3.8.0
+
+# 环境变量配置加载
+python-dotenv>=1.0.1

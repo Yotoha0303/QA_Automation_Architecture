@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Testing artifacts and logs
+*.log
+test-results/
+playwright-report/
+blob-report/
+
+# Network caches
+.qa_network_profile
+
+# Sensitive credentials
+config/jira_config.env
+!config/jira_config.env.example
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

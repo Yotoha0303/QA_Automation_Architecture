@@ -1,0 +1,24 @@
+{
+  "name": "Testing-Lab",
+  "dockerComposeFile": ["../docker-compose.infra.yml"],
+  "service": "test-runner",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"]
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-playwright.playwright",
+        "tomsaunders.k6-for-vscode",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "remoteUser": "root"
+}

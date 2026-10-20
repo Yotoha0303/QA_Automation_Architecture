@@ -1,0 +1,20 @@
+name: Mobile Automation Pipeline (Self-Hosted Runner)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mobile-hybrid-tests:
+    # 运行在连接了真机或本地 Android 模拟器的自建 Windows/Linux Runner
+    runs-on: self-hosted
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查宿主机 ADB 连接设备
+        run: |
+          adb devices
+
+      - name: 执行 Appium 移动端自动化测试
+        run: |
+          pytest tests/mobile/ -v

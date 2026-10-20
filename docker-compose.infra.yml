@@ -1,0 +1,100 @@
+services:
+  # 1. PostgreSQL 16 数据库 (独立容器)
+  # 负责测试结果存储、业务测试数据准备、压测数据记录
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: qa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qa_admin
+      POSTGRES_PASSWORD: QAPassword123!
+      POSTGRES_DB: qa_testdb
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - qa_postgres_data:/var/lib/postgresql/data
+    networks:
+      - qa-infra-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa_admin -d qa_testdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. 辅助 Mock 服务 (Prism HTTP Mock 独立容器)
+  # 依据 OpenAPI / Swagger 规范动态模拟后端微服务响应
+  mock-service:
+    image: stoplight/prism:5
+    container_name: qa-mock-service
+    restart: unless-stopped
+    ports:
+      - "4010:4010"
+    # --no-multiprocess: 容器内 CPU 受限时 Prism 多进程模式会崩溃 (isPrimary undefined)
+    command: mock -h 0.0.0.0 --no-multiprocess /schema/sample_api.yaml
+    volumes:
+      - ./mock-schemas:/schema:ro
+    networks:
+      - qa-infra-net
+
+  # 3. 自动化测试运行时 (Dev Container 统一镜像)
+  # VS Code 通过 .devcontainer/devcontainer.json 直接附着到该服务；
+  # Linux / CI 入口使用 docker compose run 复用同一镜像执行无头测试。
+  test-runner:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        # 国内构建（Ubuntu/Node/k6/npm/pip 镜像源）；start.ps1/start.sh -Mirror cn 时注入 1
+        QA_CN_BUILD: "${QA_CN_BUILD:-0}"
+        GITHUB_PROXY: "${GITHUB_PROXY:-https://ghfast.top}"
+    image: qa-runtime:local
+    container_name: qa-test-runner
+    init: true
+    command: ["sleep", "infinity"]
+    working_dir: /workspace
+    environment:
+      MOCK_BASE_URL: http://qa-mock-service:4010
+      PG_HOST: qa-postgres
+      PG_PORT: "5432"
+      APPIUM_SERVER_URL: http://appium:4723
+      ADB_HOST: host.docker.internal
+      ADB_PORT: "5037"
+    volumes:
+      - .:/workspace:cached
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      mock-service:
+        condition: service_started
+    networks:
+      - qa-infra-net
+
+  # 4. 移动端支撑层 (混合架构，按需启动)
+  # Windows 宿主机运行模拟器并暴露 ADB (5037)，本容器内 Appium Server 桥接宿主端口。
+  # 启动方式: docker compose -f docker-compose.infra.yml --profile mobile up -d appium
+  appium:
+    image: appium/appium:latest
+    container_name: qa-appium
+    profiles: ["mobile"]
+    restart: unless-stopped
+    ports:
+      - "4723:4723"
+    environment:
+      ANDROID_ADB_SERVER_ADDRESS: host.docker.internal
+      ANDROID_ADB_SERVER_PORT: "5037"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - qa-infra-net
+
+volumes:
+  qa_postgres_data:
+    driver: local
+
+networks:
+  qa-infra-net:
+    name: qa-infra-net
+    driver: bridge

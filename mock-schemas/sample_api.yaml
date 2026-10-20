@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: QA Mock 示例服务
+  version: 1.0.0
+  description: 供自动化测试用例调用的 Mock API
+paths:
+  /api/v1/health:
+    get:
+      summary: 健康检查
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              example:
+                status: "UP"
+                timestamp: "2026-10-20T11:00:00Z"
+
+  /api/v1/users/{userId}:
+    get:
+      summary: 查询用户信息
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "1001"
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              example:
+                id: "1001"
+                username: "test_engineer"
+                role: "SDET"
+                email: "sdet@example.com"
+                balance: 8888.50
+        '404':
+          description: 用户不存在
+          content:
+            application/json:
+              example:
+                error: "User not found"

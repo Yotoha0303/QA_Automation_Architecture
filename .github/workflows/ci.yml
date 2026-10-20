@@ -1,0 +1,47 @@
+name: QA Automation Pipeline (Remote Hosted Runner)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 1. 启动基础设施与存储依赖 (PostgreSQL + Mock 服务)
+        run: |
+          docker compose -f docker-compose.infra.yml up -d postgres-db mock-service
+          docker compose -f docker-compose.infra.yml ps
+
+      - name: 2. 构建并启动自动化测试运行时 (复用 Dev Container 统一镜像)
+        run: |
+          # CI Runner 与本地共用同一个 Dockerfile 和 compose 服务定义
+          docker compose -f docker-compose.infra.yml up -d --build postgres-db mock-service test-runner
+          # 等待 PostgreSQL 健康就绪
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' qa-postgres 2>/dev/null || echo starting)" = "healthy" ] && break
+            sleep 2
+          done
+
+      - name: 3. 执行 API 自动化与数据库读写测试
+        run: |
+          docker compose -f docker-compose.infra.yml exec -T test-runner pytest tests/api/ -v
+
+      - name: 4. 执行 Playwright Web 端无头自动化测试
+        run: |
+          docker compose -f docker-compose.infra.yml exec -T test-runner pytest tests/web/ -v
+
+      - name: 5. 执行 k6 性能压测基准验证
+        run: |
+          docker compose -f docker-compose.infra.yml exec -T test-runner k6 run tests/perf/load_test.js
+
+      - name: 6. 清理容器资源
+        if: always()
+        run: |
+          docker compose -f docker-compose.infra.yml down -v
