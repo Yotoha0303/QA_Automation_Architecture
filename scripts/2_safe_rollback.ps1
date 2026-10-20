@@ -1,4 +1,4 @@
-﻿# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # 强制终端控制台使用 UTF-8 编码，杜绝中文乱码
 # ------------------------------------------------------------------------------
 chcp 65001 >$null 2>&1
@@ -14,7 +14,9 @@ if (-not $IsAdmin) {
     exit
 }
 
-$ManifestDir = "C:\Users\Yotoha\Desktop\Host_Baseline_Backup"
+$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
+if (-not $desktopPath) { $desktopPath = Join-Path $env:USERPROFILE "Desktop" }
+$ManifestDir = Join-Path $desktopPath "Host_Baseline_Backup"
 $ManifestFile = "$ManifestDir\installed_manifest.json"
 $TempDir = "C:\QA_Installers_Temp"
 

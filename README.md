@@ -36,7 +36,7 @@ Python / Playwright / k6 / adb 等运行时组件只存在于 Dev Container 镜�
 针对无 `winget` 的新装机系统，仍保留直链静默安装入口：
 
 ### 🖥️ Windows 宿主机安装
-* **方式 1 (最简双击)**：直接双击运行 [`scripts/setup_host_tools_windows.bat`](file:///C:/Users/Yotoha/Desktop/QA_Automation_Architecture/scripts/setup_host_tools_windows.bat)。它会自动绕过系统脚本执行限制（ExecutionPolicy），检测是否有 `winget`；若无 `winget`，则自动从官方 CDN 直链下载 VS Code、Wireshark、Apifox、Docker Desktop 并静默完成安装。
+* **方式 1 (最简双击)**：直接双击运行 [`scripts/setup_host_tools_windows.bat`](scripts/setup_host_tools_windows.bat)。它会自动绕过系统脚本执行限制（ExecutionPolicy），检测是否有 `winget`；若无 `winget`，则自动从官方 CDN 直链下载 VS Code、Wireshark、Apifox、Docker Desktop 并静默完成安装。
 * **方式 2 (PowerShell 执行)**：
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\setup_host_tools_windows.ps1

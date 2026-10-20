@@ -50,7 +50,9 @@ if (-not $IsAdmin -and -not $script:VerifyOnly) {
     exit
 }
 
-$ManifestDir = "C:\Users\Yotoha\Desktop\Host_Baseline_Backup"
+$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
+if (-not $desktopPath) { $desktopPath = Join-Path $env:USERPROFILE "Desktop" }
+$ManifestDir = Join-Path $desktopPath "Host_Baseline_Backup"
 $ManifestFile = "$ManifestDir\installed_manifest.json"
 $VerifyCsv    = "$ManifestDir\verify_result.csv"
 $VerifyJson   = "$ManifestDir\verify_result.json"

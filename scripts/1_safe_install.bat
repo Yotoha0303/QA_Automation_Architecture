@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 title QA 测试环境 - 安装与校验
@@ -56,7 +56,7 @@ echo.
 echo [*] 正在启动脚本... 参数: !ARGS!
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" !ARGS!
 echo.
-echo [*] 脚本已结束。校验结果: C:\Users\Yotoha\Desktop\Host_Baseline_Backup\verify_result.csv
+echo [*] 脚本已结束。校验结果: %USERPROFILE%\Desktop\Host_Baseline_Backup\verify_result.csv
 pause
 goto end
 
