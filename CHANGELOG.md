@@ -14,8 +14,12 @@
 - **Web 端 Page Object Model (POM) 最小化封装**：
   - 建立标准 POM 层次结构：页面基类 [`tests/web/pages/base_page.py`](tests/web/pages/base_page.py) 与业务页面对象 [`tests/web/pages/playwright_home_page.py`](tests/web/pages/playwright_home_page.py)。
   - 彻底解耦 UI 元素定位器、用户交互动作与测试断言，新增端到端工作流用例 `test_playwright_web_pom_workflow`。
-- **文档体系同步**：
+- **文档体系同步与全球化 SEO 优化**：
   - 更新 [`README.md`](README.md) 与 [`USER_GUIDE.md`](USER_GUIDE.md)，详尽补充 POM 结构设计规范与 PostgreSQL 预置数据查询指导。
+  - **避免图表/iframe 关键词不可检索**：在 `README.md` 与 `README_EN.md` 中增设核心数据流与技术选型检索表（Keyword Matrix），使技术栈关键词可被各大搜索引擎爬虫语义索引。
+  - **增设双语 README 导航**：新增高规格英文版技术说明书 [`README_EN.md`](README_EN.md)，并在中英文主页顶部提供快速双语切换导航。
+  - **Google Image SEO 优化**：新增高清晰度矢量架构图 [`docs/images/architecture_diagram.svg`](docs/images/architecture_diagram.svg)，配置完备且富有上下文语义的 `alt` 与 `title` 图片属性。
+  - **高频报错与长尾痛点问答区 (FAQ)**：在 [`USER_GUIDE.md`](USER_GUIDE.md) 中系统梳理涵盖 Docker、端口冲突、权限策略、POM 导入机制、Postgres 卷初始化、跨主机 ADB 桥接、k6 压测并发等 12 项长尾排障指南。
 
 ---
 

@@ -35,7 +35,12 @@
   - [6. Jira 缺陷管理自动提单](#6-jira-缺陷管理自动提单)
 - [五、测试用例编写与执行指南](#五测试用例编写与执行指南)
 - [六、手动检查与验收 Checklist](#六手动检查与验收-checklist)
-- [七、常见问题与排坑指南 (FAQ)](#七常见问题与排坑指南-faq)
+- [七、常见问题与高频报错排坑指南 (FAQ & Troubleshooting)](#七常见问题与高频报错排坑指南-faq--troubleshooting)
+  - [类别 A：Docker 引擎与宿主环境依赖](#类别-adocker-引擎与宿主环境依赖)
+  - [类别 B：测试框架、运行时与用例排查](#类别-b测试框架运行时与用例排查)
+  - [类别 C：数据库持久化、契约 Mock 与 Allure 报告](#类别-c数据库持久化契约-mock-与-allure-报告)
+  - [类别 D：移动端跨主机桥接与 ADB 连接](#类别-d移动端跨主机桥接与-adb-连接)
+  - [类别 E：性能压测与 CI/CD 极速加速](#类别-e性能压测与-cicd-极速加速)
 - [八、开源协议](#八开源协议)
 
 ---
@@ -52,6 +57,13 @@
 | **层级 6: 持续集成** | GitHub Actions / 本地全流程回归 | 容器化自动化运行 | `.github/workflows/ci.yml`<br>`start.bat` / `start.sh` | 执行 API、Web、k6 性能测试，生成测试评分表 |
 
 ### 架构全景与数据流交互图
+
+<p align="center">
+  <img src="docs/images/architecture_diagram.svg" alt="QA Automation Architecture: Cloud-Native Docker Dev Container, Playwright Python POM, k6 Performance Testing, Allure Report, PostgreSQL 16, and ADB Bridge Data Flow Diagram" title="QA Modern Test Automation Architecture &amp; Data Flow Diagram" width="100%" />
+</p>
+
+<details open>
+<summary><b>🔍 点击展开 / 收起交互式 Mermaid 架构全景流向图 (Interactive Mermaid Diagram)</b></summary>
 
 ```mermaid
 flowchart TD
@@ -140,6 +152,8 @@ flowchart TD
     ApifoxHost -.->|"接口联调直连 (localhost:4010)"| MockSvc
     Browser -.->|"健康检查直连 (localhost:4010/api/v1/health)"| MockSvc
 ```
+
+</details>
 
 ---
 
@@ -411,30 +425,169 @@ powershell -ExecutionPolicy Bypass -File .\scripts\3_verify_operational.ps1
 
 ---
 
-## 七、常见问题与排坑指南 (FAQ)
+## 七、常见问题与高频报错排坑指南 (FAQ & Troubleshooting)
 
-### Q1: 提示 `Docker 引擎不可用，请手动启动 Docker Desktop 后重试`
-- **原因**：宿主机的 Docker Desktop 未启动或 WSL2 后端异常。
-- **解决**：打开 Docker Desktop 客户端，等待左下角引擎状态变为绿色 `Engine running` 即可。
+本章节汇总了自动化测试工程师在本地部署、容器编排、多层测试执行及跨主机调试时最常遇到的 **12 个长尾痛点与高频报错**，提供真实错误日志匹配与可复制的解决方案：
 
-### Q2: 为什么宿主机直接运行 `pytest tests/api/` 会报 ModuleNotFoundError？
-- **原因**：根据架构矩阵规范，Python 测试运行时所有第三方库（Playwright、requests、psycopg2 等）均严格封装在 `qa-runtime:local` 容器中，宿主机不污染全局 Python 环境。
-- **解决**：在容器内执行（使用 `.\start.bat`、VS Code Dev Container 或 `docker compose exec test-runner pytest ...`）。
+---
 
-### Q3: 为什么构建容器时下载依赖很慢？
-- **解决**：在启动时指定国内镜像源参数：`.\start.bat -Mirror cn` 或 `./start.sh --mirror cn`。脚本会自动切换 Ubuntu 清华源、npmmirror、清华 pip 源与 GitHub 代理。
+### 类别 A：Docker 引擎与宿主环境依赖
 
-### Q4: 如何完全停止并重置环境？
-- **解决**：推荐使用生命周期闭环脚本实现一键清理：
-  ```bash
-  # Windows
-  .\clean.bat       # 标准清理 (停止容器、释放网络与 ADB 端口、清除缓存)
-  .\clean.bat -v    # 深度清理 (同时清空 PostgreSQL 数据卷并重新初始化)
+#### Q1: 启动提示 `Docker 引擎不可用` 或报 `open //./pipe/docker_engine: The system cannot find the file specified`
+- **典型报错关键字**：`error during connect`, `open //./pipe/docker_engine`, `WSL2`, `Is the docker daemon running?`
+- **根因分析**：Windows 宿主机的 Docker Desktop 尚未拉起，或底层 WSL2 虚拟机子系统响应超时挂起。
+- **排查与解决**：
+  1. 在桌面双击打开 **Docker Desktop**，观察界面左下角图标变为绿色 `Engine running`；
+  2. 若 Docker Desktop 一直卡在 `Starting the Docker Engine...`，以管理员身份打开 PowerShell 执行：
+     ```powershell
+     wsl --shutdown
+     Restart-Service *docker*
+     ```
+  3. 重新运行 `.\start.bat` 即可正常拉起。
 
-  # Linux
-  ./clean.sh        # 标准清理
-  ./clean.sh -v     # 深度清理
-  ```
+#### Q2: 报错 `Bind for 0.0.0.0:5432 failed: port is already allocated` (或 5050 / 4010 / 5037 端口冲突)
+- **典型报错关键字**：`port is already allocated`, `address already in use`, `5432`, `5050`, `4010`, `5037`
+- **根因分析**：宿主机本地已安装并运行了 PostgreSQL 服务（例如本地原有的 `postgresql-x64-17` 占用了 `5432` 端口），或有残留的 `adb` 进程独占了 `5037` 端口。
+- **排查与解决**：
+  1. **查询占用进程**：
+     ```powershell
+     # Windows: 查询占用 5432 或 5037 的进程 PID
+     netstat -ano | findstr :5432
+     Get-Process -Id (Get-NetTCPConnection -LocalPort 5432).OwningProcess
+     ```
+  2. **快速释放**：
+     - 若为本地临时服务，在任务管理器结束该进程，或运行 `Stop-Service postgresql*`；
+     - 若为项目自身历史残留，运行 `.\clean.bat` 自动停止全部 QA 容器并释放端口；
+     - 若本地数据库必须常驻，可临时修改 [`docker-compose.infra.yml`](docker-compose.infra.yml) 中的外部暴露映射（如 `"15432:5432"`）。
+
+#### Q3: Windows PowerShell 报错：`因为在此系统上禁止运行脚本` (PSSecurityException)
+- **典型报错关键字**：`PSSecurityException`, `UnauthorizedAccess`, `File cannot be loaded because running scripts is disabled`
+- **根因分析**：Windows PowerShell 默认执行策略为 `Restricted`，限制直接执行 `.ps1` 脚本。
+- **排查与解决**：
+  - **最简方案**：直接双击根目录批处理 [`start.bat`](start.bat) 或 [`clean.bat`](clean.bat)，其内部已全自动注入 `-ExecutionPolicy Bypass`；
+  - **终端方案**：若使用 PowerShell 终端，使用进程级绕过策略：
+    ```powershell
+    powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
+    ```
+
+---
+
+### 类别 B：测试框架、运行时与用例排查
+
+#### Q4: 宿主机直接运行 `pytest tests/api/` 报错 `ModuleNotFoundError: No module named 'playwright'` 或 `'psycopg2'`
+- **典型报错关键字**：`ModuleNotFoundError`, `No module named 'playwright'`, `No module named 'psycopg2'`, `No module named 'jira'`
+- **根因分析**：这是符合本项目“云原生容器化”设计预期的现象。根据架构规范，测试运行时依赖（Playwright 浏览器驱动内核、PostgreSQL 驱动、k6、apifox-cli）全部封装在 `qa-runtime:local` 统一镜像内部，**宿主机无需也不应安装 Python 第三方包，实现宿主环境零污染**。
+- **排查与解决**：
+  - **推荐方式**：使用 VS Code 附着开发：按下 `F1` 选择 `Dev Containers: Reopen in Container`，在容器内置终端中运行；
+  - **命令行方式**：下发命令给后台容器执行：
+    ```bash
+    docker compose -f docker-compose.infra.yml exec test-runner pytest tests/api/ -v
+    ```
+
+#### Q5: Web 测试 Page Object Model (POM) 报 `ImportError: attempted relative import with no known parent package`
+- **典型报错关键字**：`ImportError: attempted relative import with no known parent package`, `cannot import name 'PlaywrightHomePage'`
+- **根因分析**：Pytest 在收集测试用例时，当直接以脚本模式或在不同工作目录下执行子模块用例时，Python 的相对导入（如 `from .pages...`）会找不到顶层 package 锚点。
+- **排查与解决**：
+  1. 本工程在 [`tests/__init__.py`](tests/__init__.py) 和 [`tests/web/__init__.py`](tests/web/__init__.py) 中均预置了包标识；
+  2. 在测试用例中采用了兼容垫片导入策略：
+     ```python
+     try:
+         from tests.web.pages.playwright_home_page import PlaywrightHomePage
+     except ImportError:
+         from pages.playwright_home_page import PlaywrightHomePage
+     ```
+  3. 执行测试时以项目根目录为基准下发：`pytest tests/web/`。
+
+#### Q6: Playwright 启动无头浏览器报 `Host system is missing dependencies to run browsers`
+- **典型报错关键字**：`Host system is missing dependencies`, `libgobject-2.0.so.0`, `libnss3.so`, `Chromium failed to launch`
+- **根因分析**：在精简或裁剪的 Linux 发行版镜像中，Playwright 的 Chromium/WebKit 内核缺失底层 X11 或 GTK 系统动态链接库。
+- **排查与解决**：
+  - 本项目统一基础镜像采用微软官方认证的 `mcr.microsoft.com/playwright/python:v1.48.0-noble`，已全量预置全套浏览器内核与图形库依赖；
+  - 若在自定义镜像中复现，在容器构建阶段增加系统级依赖安装指令：
+    ```bash
+    playwright install --with-deps
+    ```
+
+---
+
+### 类别 C：数据库持久化、契约 Mock 与 Allure 报告
+
+#### Q7: 修改了 `sql/init.sql` 重启容器，PostgreSQL 并没有执行建表与预置数据？
+- **典型报错关键字**：`relation "users" does not exist`, `relation "test_cases" does not exist`, `initdb script not executed`
+- **根因分析**：PostgreSQL 官方镜像初始化机制明确规定：**`/docker-entrypoint-initdb.d/` 目录下的 SQL 脚本仅在数据卷目录完全为空时才会执行一次**。若之前拉起过环境，Docker 数据卷 `qa_postgres_data` 已持久化存在，容器重启会自动复用旧数据，跳过初始化脚本。
+- **排查与解决**：
+  - 使用带 `-v` 参数的生命周期闭环脚本清空数据卷并重新触发自动建表：
+    ```bash
+    # Windows
+    .\clean.bat -v
+    .\start.bat
+
+    # Linux
+    ./clean.sh -v
+    ./start.sh
+    ```
+
+#### Q8: Prism Mock 服务访问根路径报 `404 Route not resolved`，或传参报 `422 Unprocessable Entity`
+- **典型报错关键字**：`404 Route not resolved`, `422 Unprocessable Entity`, `Request failed schema validation`
+- **根因分析**：Prism 是一个严格契约校验型 Mock 引擎，非普通静态文件服务器。它依据 [`mock-schemas/sample_api.yaml`](mock-schemas/sample_api.yaml) 路由规则执行强匹配。
+- **排查与解决**：
+  - 访问必须带上已定义的 API 路径（如 `http://localhost:4010/api/v1/health` 或 `http://localhost:4010/api/v1/users/1001`）；
+  - 若为 POST/PUT 请求，请求体 JSON 字段类型与必填项必须严格与 YAML 契约规范一致，否则将返回 `422` 校验失败提示。
+
+#### Q9: Allure Report 大屏 (http://localhost:5050) 显示用例数为 0 或未实时刷新
+- **典型报错关键字**：`Allure Report 0 test cases`, `Results not found`, `Dashboard not refreshing`
+- **根因分析**：测试执行时未输出结果至 `./allure-results`，或 Allure 容器轮询间隔未到达。
+- **排查与解决**：
+  1. 本工程在 [`conftest.py`](conftest.py) 中内置了全局自动注入钩子，任何通过 pytest 执行的用例均会自动携带 `--alluredir=allure-results`；
+  2. Allure Docker Service 设定了 `CHECK_RESULTS_EVERY_SECONDS=3` 实时检测，执行完测试后等待 3 秒刷新浏览器网页即可；
+  3. 如遇页面浏览器缓存强阻断，可在页面按 `Ctrl + F5` 强制刷新，或执行 `docker restart qa-allure`。
+
+---
+
+### 类别 D：移动端跨主机桥接与 ADB 连接
+
+#### Q10: 容器内 Appium 报 `Could not find a connected Android device` 或连接 `host.docker.internal:5037` 拒绝
+- **典型报错关键字**：`connection refused`, `host.docker.internal:5037`, `device offline`, `ADB server not found`
+- **根因分析**：宿主机 `adb` 默认仅监听本地回环 `127.0.0.1:5037`，容器无法通过 Docker 网桥跨主机访问到宿主 loopback。
+- **排查与解决**：
+  1. 宿主机 ADB Server 必须以广域监听模式启动（绑定 `0.0.0.0:5037`）：
+     ```powershell
+     # 直接执行工程预置脚本一键监听：
+     .\scripts\start_host_adb.cmd
+     ```
+  2. 验证宿主机防火墙是否拦截了 `5037` 端口；
+  3. 在宿主机执行 `adb devices` 确认设备状态为 `device` 而非 `offline` 或 `unauthorized`（若为手机真机，需在屏幕上允许 USB 调试授权）。
+
+---
+
+### 类别 E：性能压测与 CI/CD 极速加速
+
+#### Q11: k6 高并发压测阶段出现 `connection reset by peer` 或 `socket: too many open files`
+- **典型报错关键字**：`connection reset by peer`, `dial tcp: lookup: i/o timeout`, `too many open files`
+- **根因分析**：高并发压测阶段瞬间并发过高，打满 Prism 单进程 Mock 服务或 Docker 容器底层句柄限制。
+- **排查与解决**：
+  1. 优化 [`tests/perf/load_test.js`](tests/perf/load_test.js) 中的阶梯爬坡配置（`stages` 建议设置 5 秒预热爬坡再达峰值）；
+  2. 针对生产级大流量压测，可直连后端集群 IP，并在 `docker-compose.infra.yml` 中调大容器 ulimit 限制：
+     ```yaml
+     ulimits:
+       nofile:
+         soft: 65535
+         hard: 65535
+     ```
+
+#### Q12: 新机首次启动本地编译 6.5GB 镜像耗时 15~20 分钟过慢？
+- **典型报错关键字**：`Building test-runner`, `Playwright download timeout`, `Slow Docker build`
+- **根因分析**：Playwright 包含完整 Chromium/Firefox/WebKit 三大浏览器内核，体积约 6.5GB，本地冷编译受网络带宽与外网下载源制约。
+- **排查与解决**：
+  - **GHCR 极速拉取（仅需 2 分钟）**：本项目已通过 GitHub Actions CI 将预编译镜像发布至公共容器注册表 `ghcr.io/yotoha0303/qa-runtime:latest`。
+  - `start.bat` / `start.sh` **已内置自动优化逻辑**：启动时优先尝试从 GHCR 拉取预编译镜像，只有在离线或断网环境下才回退到本地编译；
+  - 若处于国内受限网络，可追加参数强制国内加速：`.\start.bat -Mirror cn`。
+
+---
+
+## 八、开源协议
+
+本项目遵循 **[Apache License 2.0](LICENSE)** 开源许可证。详见工程根目录下的 `LICENSE` 文件。
 
 ---
 

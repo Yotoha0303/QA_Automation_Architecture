@@ -1,3 +1,9 @@
+<div align="right">
+  <strong>Languages:</strong>
+  <a href="README.md">简体中文</a> |
+  <a href="README_EN.md">English</a>
+</div>
+
 # QA 现代化自动化测试工程架构规范与使用指南
 
 [![CI Pipeline](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/ci.yml/badge.svg)](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/ci.yml)
@@ -30,6 +36,13 @@
 | **6. 持续集成** | GitHub Actions | 远端托管 Runner / 混合 Runner | `.github/workflows/ci.yml` |
 
 ### 架构全景与数据流图 (Architecture & Data Flow)
+
+<p align="center">
+  <img src="docs/images/architecture_diagram.svg" alt="QA Automation Architecture: Cloud-Native Docker Dev Container, Playwright Python POM, k6 Performance Testing, Allure Report, PostgreSQL 16, and ADB Bridge Data Flow Diagram" title="QA Modern Test Automation Architecture &amp; Data Flow Diagram" width="100%" />
+</p>
+
+<details open>
+<summary><b>🔍 点击展开 / 收起交互式 Mermaid 架构全景流向图 (Interactive Mermaid Diagram)</b></summary>
 
 ```mermaid
 flowchart TD
@@ -118,6 +131,24 @@ flowchart TD
     ApifoxHost -.->|"接口联调直连 (localhost:4010)"| MockSvc
     Browser -.->|"健康检查直连 (localhost:4010/api/v1/health)"| MockSvc
 ```
+
+</details>
+
+#### 🔍 架构核心数据流与关键技术选型检索表 (Architecture & Tech Stack Keyword Matrix)
+
+> **SEO 索引与技术规格说明**：为解决图形化流程在搜索引擎爬虫中“不可检索”的问题，以下表格对架构全景图中的核心技术组件、通信协议、服务端口及检索关键词进行结构化索引：
+
+| 核心组件 / 服务名称 | 英文检索关键词 (Keywords) | 部署层级与形态 | 通信协议与端口 | 职责与技术特性 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Dev Container 运行时** | `Dev Container`, `Python 3.12`, `Playwright`, `k6`, `apifox-cli` | 容器运行时 (`qa-test-runner`) | 内部桥接 (`qa-infra-net`) | 封装无头 Chromium/Firefox/WebKit 浏览器、高并发压测引擎与命令行，环境与宿主机完全隔离 |
+| **Web 自动化 POM** | `Page Object Model`, `POM`, `Playwright Python`, `E2E Testing` | 测试用例层 (`tests/web/`) | HTTPS / DOM 树驱动 | 页面元素 Locator 与交互方法封装基类，降低 UI 变动维护成本，实现业务链路断言与表现层彻底解耦 |
+| **PostgreSQL 数据库** | `PostgreSQL 16`, `Database Init SQL`, `Seed Data`, `DB Testing` | 存储依赖 (`qa-postgres`) | TCP `5432` | 挂载 `sql/init.sql` 自动执行表结构初始化与预置种子数据，支持 API/DB 自动化用例实时数据存取与断言 |
+| **Prism Mock 服务** | `Prism HTTP Mock`, `OpenAPI 3.0`, `Contract Testing`, `API Mock` | 编排服务 (`qa-mock-service`) | HTTP `4010` | 挂载 `sample_api.yaml` 严格遵循 OpenAPI 契约规范，零侵入提供生产级接口模拟，解除后端服务依赖 |
+| **Allure 可视化报告** | `Allure Report`, `Allure Docker Service`, `Test Dashboard` | 报告服务 (`qa-allure`) | HTTP `5050` | 监听 `./allure-results` 变动，自动渲染交互式大屏、用例耗时分布柱状图、缺陷分类与执行历史趋势 |
+| **ADB 移动端跨主机桥接** | `ADB Bridge`, `Appium Mobile`, `Android Debug Bridge`, `host.docker.internal` | 混合架构 (宿主 + 容器) | TCP `5037`, `4723` | 宿主机 ADB 开放 `0.0.0.0:5037`，容器内 Appium 穿透调用宿主连接的 Android 模拟器或物理真机 |
+| **GHCR 预编译镜像** | `GHCR`, `GitHub Container Registry`, `Docker Image Cache`, `Docker CI` | 镜像注册表 (云端托管) | HTTPS `443` | `ghcr.io/yotoha0303/qa-runtime:latest` 预编译 6.5GB 镜像，新开发者免除 15 分钟本地构建，2 分钟极速拉取 |
+| **Jira SaaS 自动化提单** | `Jira SaaS REST API`, `conftest.py hook`, `Bug Auto-Reporting` | 外部协同云服务 | HTTPS REST | Pytest 执行失败通过 conftest 钩子自动捕获用例上下文与报错堆栈，通过 REST API 自动提交 Bug 单 |
+| **生命周期闭环脚本** | `clean.bat`, `clean.sh`, `Docker Lifecycle`, `Teardown Script` | 运维脚本 (`scripts/`) | Local Shell / PowerShell | 随开随用、用完即净，停止所有容器、释放专用网桥与端口，支持 `-v` 重置持久化卷与 `-a` 深度清理 |
 
 ---
 

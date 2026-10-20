@@ -1,0 +1,252 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="100%" height="100%">
+  <defs>
+    <style>
+      .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; fill: #475569; }
+      .box-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #1e293b; }
+      .badge-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 600; fill: #ffffff; }
+      .card-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #0f172a; }
+      .card-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; fill: #64748b; }
+      .flow-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 600; fill: #2563eb; }
+      .arrow { stroke: #3b82f6; stroke-width: 2; fill: none; stroke-dasharray: 4,4; marker-end: url(#arrowhead); }
+      .arrow-solid { stroke: #0284c7; stroke-width: 2.2; fill: none; marker-end: url(#arrowhead-solid); }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" />
+    </marker>
+    <marker id="arrowhead-solid" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0284c7" />
+    </marker>
+    <filter id="shadow" x="-3%" y="-3%" width="106%" height="106%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.08" />
+    </filter>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1200" height="820" fill="#f8fafc" rx="12" />
+
+  <!-- Header Banner -->
+  <g transform="translate(40, 30)">
+    <rect width="1120" height="70" rx="8" fill="#ffffff" filter="url(#shadow)" stroke="#e2e8f0" stroke-width="1" />
+    <text x="30" y="36" class="title" font-size="22">QA Automation Architecture - Cloud-Native Test Engineering</text>
+    <text x="30" y="56" class="subtitle">Data Flow Diagram: Dev Container, Docker Compose, Host Tools, Allure Report, PostgreSQL &amp; ADB Bridge</text>
+    <rect x="940" y="22" width="150" height="26" rx="13" fill="#2563eb" />
+    <text x="965" y="39" class="badge-text">Apache 2.0 Licensed</text>
+  </g>
+
+  <!-- Host Layer Box -->
+  <g transform="translate(40, 120)">
+    <rect width="320" height="660" rx="10" fill="#ffffff" filter="url(#shadow)" stroke="#cbd5e1" stroke-width="1.5" />
+    <rect x="0" y="0" width="320" height="42" rx="10" fill="#f1f5f9" />
+    <text x="20" y="27" class="box-label">🖥️ 宿主工具层 (Host Layer)</text>
+
+    <!-- Host Cards -->
+    <!-- Card 1: Entry Scripts -->
+    <g transform="translate(18, 55)">
+      <rect width="284" height="65" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="14" y="25" class="card-title">🚀 一键入口脚本 (One-Click Launcher)</text>
+      <text x="14" y="44" class="card-desc">start.bat / start.sh / clean.bat / clean.sh</text>
+      <text x="14" y="57" class="card-desc">生命周期闭环、自动网络镜像探测</text>
+    </g>
+
+    <!-- Card 2: VS Code -->
+    <g transform="translate(18, 130)">
+      <rect width="284" height="65" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="14" y="25" class="card-title">💻 Visual Studio Code (IDE)</text>
+      <text x="14" y="44" class="card-desc">Dev Containers 远程协议透明附着</text>
+      <text x="14" y="57" class="card-desc">代码与测试断点调试零损耗体验</text>
+    </g>
+
+    <!-- Card 3: Browser UI -->
+    <g transform="translate(18, 205)">
+      <rect width="284" height="65" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="14" y="25" class="card-title">🌐 Web 浏览器 (Allure &amp; Mock UI)</text>
+      <text x="14" y="44" class="card-desc">http://localhost:5050 (Allure 实时大屏)</text>
+      <text x="14" y="57" class="card-desc">http://localhost:4010/api/v1/health (Mock 联调)</text>
+    </g>
+
+    <!-- Card 4: Apifox Desktop -->
+    <g transform="translate(18, 280)">
+      <rect width="284" height="60" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="14" y="25" class="card-title">🦊 Apifox Desktop 桌面端</text>
+      <text x="14" y="45" class="card-desc">接口契约设计、联调与可视化测试编排</text>
+    </g>
+
+    <!-- Card 5: Wireshark -->
+    <g transform="translate(18, 350)">
+      <rect width="284" height="60" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="14" y="25" class="card-title">🦈 Wireshark / TShark 抓包分析</text>
+      <text x="14" y="45" class="card-desc">底层网络封包排查、HTTP/TCP 协议审计</text>
+    </g>
+
+    <!-- Card 6: ADB Server -->
+    <g transform="translate(18, 420)">
+      <rect width="284" height="65" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="14" y="25" class="card-title">📱 宿主 ADB Server (0.0.0.0:5037)</text>
+      <text x="14" y="44" class="card-desc">监听 5037 跨容器网络网关透明穿透</text>
+      <text x="14" y="57" class="card-desc">连接 Android 真机与物理模拟器</text>
+    </g>
+
+    <!-- Card 7: Local Volume Mounts -->
+    <g transform="translate(18, 495)">
+      <rect width="284" height="70" rx="6" fill="#eff6ff" stroke="#bfdbfe" />
+      <text x="14" y="23" class="card-title" fill="#1d4ed8">📁 本地数据卷与代码挂载源</text>
+      <text x="14" y="42" class="card-desc">./workspace 源码目录双向同步 (:cached)</text>
+      <text x="14" y="58" class="card-desc">./allure-results 测试执行轨迹输出源</text>
+    </g>
+
+    <!-- Card 8: Mobile Device -->
+    <g transform="translate(18, 575)">
+      <rect width="284" height="65" rx="6" fill="#f0fdf4" stroke="#bbf7d0" />
+      <text x="14" y="24" class="card-title" fill="#15803d">📲 Android 真机 / 模拟器</text>
+      <text x="14" y="43" class="card-desc">USB 调试 / 无线 ADB 设备直连</text>
+      <text x="14" y="57" class="card-desc">Appium UiAutomator2 移动自动化执行目标</text>
+    </g>
+  </g>
+
+  <!-- Docker Compose & Dev Container Layer Box -->
+  <g transform="translate(390, 120)">
+    <rect width="470" height="660" rx="10" fill="#ffffff" filter="url(#shadow)" stroke="#0284c7" stroke-width="2" />
+    <rect x="0" y="0" width="470" height="42" rx="10" fill="#e0f2fe" />
+    <text x="20" y="27" class="box-label" fill="#0369a1">🐳 Docker Compose 基础设施与统一运行时 (qa-infra-net)</text>
+
+    <!-- Dev Container: test-runner -->
+    <g transform="translate(20, 55)">
+      <rect width="430" height="175" rx="8" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.5" />
+      <rect x="12" y="10" width="170" height="22" rx="11" fill="#0284c7" />
+      <text x="22" y="25" class="badge-text">⚡ Dev Container (test-runner)</text>
+
+      <g transform="translate(15, 40)">
+        <text x="5" y="18" class="card-title">🧪 Pytest 测试框架 + conftest.py 自动注入</text>
+        <text x="5" y="34" class="card-desc">• 自动注入 --alluredir=allure-results 零配置生成</text>
+        <text x="5" y="52" class="card-title">🎭 Playwright 多浏览器内核 (Chromium / Firefox / WebKit)</text>
+        <text x="5" y="68" class="card-desc">• Page Object Model (POM) 设计模式，业务逻辑与 Locator 解耦</text>
+        <text x="5" y="86" class="card-title">📈 k6 高并发阶梯压测引擎 + apifox-cli</text>
+        <text x="5" y="102" class="card-desc">• 10 并发虚拟用户 (VUs)，SLA 响应延迟 p(95)&lt;500ms 基线校验</text>
+        <text x="5" y="120" class="card-title">🔌 Appium Python 客户端 (移动端测试支持)</text>
+      </g>
+    </g>
+
+    <!-- PostgreSQL Service -->
+    <g transform="translate(20, 245)">
+      <rect width="430" height="115" rx="8" fill="#f8fafc" stroke="#e2e8f0" />
+      <rect x="12" y="10" width="180" height="22" rx="11" fill="#334155" />
+      <text x="22" y="25" class="badge-text">🐘 PostgreSQL 16 (Port: 5432)</text>
+      <g transform="translate(15, 40)">
+        <text x="5" y="18" class="card-title">qa-postgres 独立持久化存储容器</text>
+        <text x="5" y="35" class="card-desc">• 挂载 ./sql:/docker-entrypoint-initdb.d:ro 自动初始化 Schema</text>
+        <text x="5" y="52" class="card-desc">• 预置种子数据：users (测试人员)、test_cases (测试用例)、test_executions</text>
+        <text x="5" y="69" class="card-desc">• 内置 pg_isready 健康检查，保障下游用例按依赖时序就绪</text>
+      </g>
+    </g>
+
+    <!-- Prism Mock Service -->
+    <g transform="translate(20, 375)">
+      <rect width="430" height="95" rx="8" fill="#f8fafc" stroke="#e2e8f0" />
+      <rect x="12" y="10" width="190" height="22" rx="11" fill="#64748b" />
+      <text x="22" y="25" class="badge-text">🎭 Prism HTTP Mock (Port: 4010)</text>
+      <g transform="translate(15, 40)">
+        <text x="5" y="18" class="card-title">qa-mock-service 契约模拟服务</text>
+        <text x="5" y="35" class="card-desc">• 挂载 mock-schemas/sample_api.yaml 只读 OpenAPI 3.0 规范</text>
+        <text x="5" y="52" class="card-desc">• 动态模拟 /api/v1/health 与 /api/v1/users/{id} 契约响应</text>
+      </g>
+    </g>
+
+    <!-- Allure Report Docker Service -->
+    <g transform="translate(20, 485)">
+      <rect width="430" height="85" rx="8" fill="#fffbeb" stroke="#fde68a" />
+      <rect x="12" y="10" width="200" height="22" rx="11" fill="#d97706" />
+      <text x="22" y="25" class="badge-text">📊 Allure Report (Port: 5050)</text>
+      <g transform="translate(15, 38)">
+        <text x="5" y="18" class="card-title" fill="#92400e">qa-allure 可视化分析报告容器</text>
+        <text x="5" y="34" class="card-desc">• 实时轮询挂载的 ./allure-results (CHECK_RESULTS_EVERY_SECONDS=3)</text>
+        <text x="5" y="48" class="card-desc">• 动态生成通过率仪表盘、执行耗时分布柱状图与缺陷追溯</text>
+      </g>
+    </g>
+
+    <!-- Appium Server Container -->
+    <g transform="translate(20, 585)">
+      <rect width="430" height="60" rx="8" fill="#fdf4ff" stroke="#f5d0fe" />
+      <rect x="12" y="10" width="180" height="22" rx="11" fill="#a21caf" />
+      <text x="22" y="25" class="badge-text">🤖 Appium Server (Port: 4723)</text>
+      <g transform="translate(15, 36)">
+        <text x="5" y="16" class="card-desc">--profile mobile 按需启动，通过 host.docker.internal 桥接宿主 ADB</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- External SaaS & Cloud Layer Box -->
+  <g transform="translate(890, 120)">
+    <rect width="270" height="660" rx="10" fill="#ffffff" filter="url(#shadow)" stroke="#cbd5e1" stroke-width="1.5" />
+    <rect x="0" y="0" width="270" height="42" rx="10" fill="#f1f5f9" />
+    <text x="20" y="27" class="box-label">☁️ 云端注册表与 SaaS 协同</text>
+
+    <!-- GHCR Prebuilt Image -->
+    <g transform="translate(18, 55)">
+      <rect width="234" height="150" rx="6" fill="#f0fdf4" stroke="#86efac" />
+      <rect x="12" y="10" width="140" height="22" rx="11" fill="#16a34a" />
+      <text x="20" y="25" class="badge-text">📦 GHCR 预编译镜像</text>
+      <g transform="translate(12, 40)">
+        <text x="2" y="18" class="card-title" fill="#166534">qa-runtime:latest</text>
+        <text x="2" y="35" class="card-desc">• GitHub Actions CI 自动构建</text>
+        <text x="2" y="52" class="card-desc">• 托管在 GitHub Packages</text>
+        <text x="2" y="69" class="card-desc">• 免除 15 分钟本地编译等待</text>
+        <text x="2" y="86" class="card-desc">• start.bat 优先自动极速拉取</text>
+      </g>
+    </g>
+
+    <!-- Jira SaaS -->
+    <g transform="translate(18, 220)">
+      <rect width="234" height="135" rx="6" fill="#eff6ff" stroke="#bfdbfe" />
+      <rect x="12" y="10" width="130" height="22" rx="11" fill="#2563eb" />
+      <text x="20" y="25" class="badge-text">🐞 Jira Cloud SaaS</text>
+      <g transform="translate(12, 40)">
+        <text x="2" y="18" class="card-title" fill="#1e40af">自动化缺陷管理集成</text>
+        <text x="2" y="35" class="card-desc">• conftest.py 失败钩子</text>
+        <text x="2" y="52" class="card-desc">• REST API 自动提交 Bug 单</text>
+        <text x="2" y="69" class="card-desc">• 携带错误日志与执行堆栈</text>
+      </g>
+    </g>
+
+    <!-- Target Web / External System -->
+    <g transform="translate(18, 370)">
+      <rect width="234" height="135" rx="6" fill="#f8fafc" stroke="#cbd5e1" />
+      <rect x="12" y="10" width="130" height="22" rx="11" fill="#475569" />
+      <text x="20" y="25" class="badge-text">🌍 被测 Web 目标</text>
+      <g transform="translate(12, 40)">
+        <text x="2" y="18" class="card-title">被测生产 / 预发站点</text>
+        <text x="2" y="35" class="card-desc">• E2E 浏览器无头页面访问</text>
+        <text x="2" y="52" class="card-desc">• Playwright DOM 断言</text>
+        <text x="2" y="69" class="card-desc">• 跨浏览器兼容性矩阵执行</text>
+      </g>
+    </g>
+
+    <!-- GitHub Actions Runner -->
+    <g transform="translate(18, 520)">
+      <rect width="234" height="120" rx="6" fill="#fdf4ff" stroke="#f0abfc" />
+      <rect x="12" y="10" width="145" height="22" rx="11" fill="#9333ea" />
+      <text x="20" y="25" class="badge-text">⚙️ GitHub Actions CI</text>
+      <g transform="translate(12, 40)">
+        <text x="2" y="18" class="card-title" fill="#6b21a8">远端托管 CI 流水线</text>
+        <text x="2" y="35" class="card-desc">• ci.yml 自动触发全量回归</text>
+        <text x="2" y="52" class="card-desc">• 每次 push/PR 质量门禁守卫</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Connectors / Data Flow Lines -->
+  <!-- Line: Host to test-runner volume mount -->
+  <path d="M 320, 520 L 390, 140" class="arrow-solid" stroke="#0284c7" />
+  <!-- Line: GHCR image to test-runner -->
+  <path d="M 890, 180 L 820, 140" class="arrow" stroke="#16a34a" />
+  <!-- Line: test-runner to PostgreSQL -->
+  <path d="M 605, 230 L 605, 245" class="arrow-solid" stroke="#334155" />
+  <!-- Line: test-runner to Mock -->
+  <path d="M 605, 360 L 605, 375" class="arrow-solid" stroke="#64748b" />
+  <!-- Line: test-runner to Allure -->
+  <path d="M 605, 470 L 605, 485" class="arrow-solid" stroke="#d97706" />
+  <!-- Line: test-runner to Jira -->
+  <path d="M 820, 180 L 890, 260" class="arrow" stroke="#2563eb" />
+  <!-- Line: test-runner to Target Web -->
+  <path d="M 820, 200 L 890, 410" class="arrow" stroke="#475569" />
+</svg>
