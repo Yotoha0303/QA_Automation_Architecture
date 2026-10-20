@@ -1,6 +1,13 @@
 # QA 现代化自动化测试工程架构规范与使用指南
 
+[![CI Pipeline](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/ci.yml/badge.svg)](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/ci.yml)
+[![Publish GHCR](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/publish_ghcr.yml/badge.svg)](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/publish_ghcr.yml)
+[![GHCR Docker Image](https://img.shields.io/badge/GHCR_Image-ghcr.io%2Fyotoha0303%2Fqa--runtime:latest-238636?logo=docker&logoColor=white)](https://github.com/Yotoha0303/QA_Automation_Architecture/pkgs/container/qa-runtime)
+[![Release](https://img.shields.io/github/v/tag/Yotoha0303/QA_Automation_Architecture?label=Release&color=blue)](https://github.com/Yotoha0303/QA_Automation_Architecture/releases)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](requirements.txt)
+[![Playwright](https://img.shields.io/badge/Playwright-v1.48+-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Allure Report](https://img.shields.io/badge/Allure_Report-Port_5050-orange?logo=qameta)](http://localhost:5050)
 
 本项目严格依据架构设计图实现，采用**云原生容器化 + 宿主混合架构**，解决测试工具链环境冲突、真机调试隔离与 CI/CD 难点。
 

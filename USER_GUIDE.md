@@ -1,5 +1,11 @@
 # QA 现代化自动化测试工程 - 用户使用说明书 (User Guide)
 
+[![CI Pipeline](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/ci.yml/badge.svg)](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/ci.yml)
+[![Publish GHCR](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/publish_ghcr.yml/badge.svg)](https://github.com/Yotoha0303/QA_Automation_Architecture/actions/workflows/publish_ghcr.yml)
+[![GHCR Docker Image](https://img.shields.io/badge/GHCR_Image-ghcr.io%2Fyotoha0303%2Fqa--runtime:latest-238636?logo=docker&logoColor=white)](https://github.com/Yotoha0303/QA_Automation_Architecture/pkgs/container/qa-runtime)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Allure Report](https://img.shields.io/badge/Allure_Report-Port_5050-orange?logo=qameta)](http://localhost:5050)
+
 本项目基于**云原生容器化 + 宿主工具混合架构**设计，旨在解决企业级测试工具链环境冲突、真机调试隔离与 CI/CD 流水线标准化难题。
 
 本文档面向测试工程师、测试开发工程师（SDET）及运维人员，指导您在 Windows 或 Linux 环境下快速拉起测试环境并开展日常测试开发工作。
