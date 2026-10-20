@@ -32,7 +32,6 @@ def test_playwright_web_pom_workflow(page: Page):
     home_page.click_get_started()
     expect(page).to_have_url(re.compile(r"/docs/intro"))
 
-    # 3. 验证进入安装页面后的一级标题
-    heading = home_page.get_heading_text()
-    assert "Installation" in heading
+    # 3. 验证进入安装页面后的一级标题 (Playwright Web-first 机制自动轮询等待)
+    home_page.verify_installation_heading()
 

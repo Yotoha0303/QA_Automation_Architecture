@@ -225,6 +225,7 @@ def test_playwright_web_pom_workflow(page: Page):
     home_page.verify_page_loaded()
     home_page.click_get_started()
     expect(page).to_have_url(re.compile(r"/docs/intro"))
+    home_page.verify_installation_heading()
 ```
 
 ---

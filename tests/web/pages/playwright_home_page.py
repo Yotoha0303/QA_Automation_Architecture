@@ -41,6 +41,10 @@ class PlaywrightHomePage(BasePage):
         expect(self.page).to_have_title(re.compile(r"Playwright"))
         expect(self.get_started_btn).to_be_visible()
 
+    def verify_installation_heading(self):
+        """断言进入文档页后的一级标题 (基于 Playwright Web-first 机制自动轮询等待)"""
+        expect(self.find(self.MAIN_HEADING)).to_contain_text("Installation")
+
     def get_heading_text(self) -> str:
         """获取当前页面主标题内容"""
         return self.find(self.MAIN_HEADING).inner_text()
