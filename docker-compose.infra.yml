@@ -90,8 +90,28 @@ services:
     networks:
       - qa-infra-net
 
+  # 5. Allure 自动化测试可视化报告服务 (独立容器)
+  # 实时监听 ./allure-results 目录，生成交互式 HTML 图形化报告
+  # 访问地址: http://localhost:5050
+  allure:
+    image: frankescobar/allure-docker-service:latest
+    container_name: qa-allure
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      CHECK_RESULTS_EVERY_SECONDS: 3
+      KEEP_HISTORY: 1
+    volumes:
+      - ./allure-results:/app/allure-results
+      - qa_allure_reports:/app/default-reports
+    networks:
+      - qa-infra-net
+
 volumes:
   qa_postgres_data:
+    driver: local
+  qa_allure_reports:
     driver: local
 
 networks:

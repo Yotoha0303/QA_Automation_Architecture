@@ -12,6 +12,30 @@ JIRA_TOKEN = os.getenv("JIRA_API_TOKEN")
 JIRA_PROJECT = os.getenv("JIRA_PROJECT_KEY", "QA")
 
 
+def pytest_load_initial_conftests(early_config, parser, args):
+    """
+    自动注入 Allure 结果输出目录：
+    无论命令行是否显式传入 --alluredir，均自动注入 --alluredir=allure-results，
+    确保每次运行测试后均能自动生成并刷新 Allure 图形化报告数据。
+    """
+    try:
+        import allure_pytest  # noqa: F401
+        has_allure = True
+    except ImportError:
+        has_allure = False
+
+    if has_allure:
+        has_allure_arg = any(arg == "--alluredir" or arg.startswith("--alluredir=") for arg in args)
+        if not has_allure_arg:
+            args.append("--alluredir=allure-results")
+
+
+def pytest_configure(config):
+    """兜底确保 Allure 报告输出目录配置项生效"""
+    if hasattr(config.option, "allure_report_dir") and not config.option.allure_report_dir:
+        config.option.allure_report_dir = "allure-results"
+
+
 def report_bug_to_jira(test_name: str, error_details: str):
     """当测试失败时，通过官方 SaaS REST API 自动提交缺陷单"""
     if not JIRA_ENABLE or not JIRA_TOKEN:

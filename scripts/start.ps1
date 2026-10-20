@@ -193,10 +193,10 @@ Add-Score "1. 宿主工具" "Docker 引擎" "√ 就绪" "Docker v$dockerVer"
 # ------------------------------------------------------------------------------
 # 【层级 2: 测试编排与存储依赖】
 # ------------------------------------------------------------------------------
-Section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock)】"
+Section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock + Allure Report)】"
 
-Step "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock)..."
-docker compose -f "$ComposeFile" up -d postgres-db mock-service
+Step "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock + Allure Report)..."
+docker compose -f "$ComposeFile" up -d postgres-db mock-service allure
 if ($LASTEXITCODE -ne 0) {
     Fail "Docker Compose 启动基础服务失败"
     Add-Score "2. 编排与存储" "基础容器组" "× 启动失败" "Compose exit != 0"
@@ -232,6 +232,20 @@ if ($mockHealthy) {
 } else {
     Warn "Prism Mock 服务未返回预期健康响应"
     Add-Score "2. 编排与存储" "Prism Mock" "! 响应异常" "http://localhost:4010"
+}
+
+# 验证 Allure 图形化报告服务
+$allureHealthy = $false
+try {
+    $resp = curl.exe -s -m 5 -I http://localhost:5050 2>$null
+    if ($resp -match 'HTTP.*200') { $allureHealthy = $true }
+} catch {}
+if ($allureHealthy) {
+    OK "Allure 图形化报告服务已就绪 (端口: 5050, http://localhost:5050)"
+    Add-Score "2. 编排与存储" "Allure Report" "√ 就绪" "http://localhost:5050"
+} else {
+    Warn "Allure 报告服务未完全就绪 (启动中)"
+    Add-Score "2. 编排与存储" "Allure Report" "! 启动中" "http://localhost:5050"
 }
 
 # ------------------------------------------------------------------------------
@@ -427,6 +441,7 @@ Write-Host "====================================================================
 if ($allTestsPassed) {
     Write-Host "【全流程验证成功】软件测试环境全部 6 大架构层级就绪，测试套件 100% 跑通！" -ForegroundColor Green
     Write-Host "  * 停止基础设施:   docker compose -f docker-compose.infra.yml down" -ForegroundColor Gray
+    Write-Host "  * Allure 图形报告: http://localhost:5050" -ForegroundColor Cyan
     Write-Host "  * 重新执行测试:   docker compose -f docker-compose.infra.yml exec test-runner pytest tests/api/" -ForegroundColor Gray
     Write-Host "  * 挂载 VS Code:   powershell .\scripts\start.ps1 -OpenVsCode" -ForegroundColor Gray
     exit 0

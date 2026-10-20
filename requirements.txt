@@ -3,6 +3,7 @@ pytest>=8.0.0
 pytest-html>=4.1.0
 pytest-xdist>=3.5.0
 pytest-rerunfailures>=14.0
+allure-pytest>=2.13.0
 
 # Web 自动化与浏览器支持
 playwright>=1.48.0

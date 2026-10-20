@@ -150,7 +150,20 @@ docker compose -f docker-compose.infra.yml exec test-runner bash
 
 ---
 
-### 4. 移动端混合支撑层 (宿主 ADB + Appium Server)
+### 4. Allure 测试可视化报告服务 (端口 5050)
+
+项目中已集成基于 Docker 的 Allure Report 可视化服务 (`qa-allure`)，并通过 `conftest.py` 全自动注入 `--alluredir=allure-results`。
+
+- **工作机制**：当您运行任何 pytest 测试用例（API、Web、移动端）时，测试结果数据均会自动输出至 `./allure-results`。Allure 容器会实时监听该目录，自动渲染交互式图形化报告。
+- **直观查看报告**：直接在浏览器中打开：👉 [http://localhost:5050](http://localhost:5050)
+- **报告特性**：
+  * **总体大屏 (Overview)**：通过率仪表盘、耗时曲线、测试用例统计。
+  * **行为驱动层级 (Behaviors / Suites)**：按照用例套件与功能模块清晰展示测试层级。
+  * **详细错误堆栈与步骤 (Timeline / Retries)**：直观查看每个失败用例的详细堆栈与断言失败现场。
+
+---
+
+### 5. 移动端混合支撑层 (宿主 ADB + Appium Server)
 
 本项目移动端采用混合架构：
 - 宿主机运行真机连接或本地 Android 模拟器，宿主 ADB 监听 `0.0.0.0:5037`。

@@ -15,7 +15,7 @@
 | 层级 | 工具与组件 | 实际部署形式 | 对应目录与配置文件 |
 | :--- | :--- | :--- | :--- |
 | **1. 宿主环境与桌面工具** | Wireshark, Apifox, VS Code, Docker | Windows / Linux 原生安装 | `scripts/setup_host_tools_windows.bat`<br>`scripts/setup_host_tools_linux.sh` |
-| **2. 测试编排与存储依赖** | PostgreSQL, 辅助 Mock 服务 (Prism) | 独立容器 | `docker-compose.infra.yml`, `mock-schemas/` |
+| **2. 测试编排与存储依赖** | PostgreSQL, 辅助 Mock 服务 (Prism), Allure Report 可视化报告服务 | 独立容器 | `docker-compose.infra.yml`, `mock-schemas/` |
 | **3. 自动化测试运行时** | Python 3.12+, Playwright, k6, apifox-cli | Dev Container 统一镜像 (Compose `test-runner` 服务) | `.devcontainer/Dockerfile`, `.devcontainer/devcontainer.json`, `docker-compose.infra.yml` |
 | **4. 移动端支撑层** | Appium Server + 宿主 ADB | 混合架构 | `scripts/start_host_adb.cmd`, `docker-compose.infra.yml` (`appium`, mobile profile), `tests/mobile/` |
 | **5. 缺陷管理** | Jira | 官方 SaaS / API Token 集成 | `config/jira_config.env.example`, `conftest.py` |

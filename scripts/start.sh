@@ -135,10 +135,10 @@ ok "Docker 引擎就绪: $(docker --version)"
 # ------------------------------------------------------------------------------
 # 【层级 2: 测试编排与存储依赖】
 # ------------------------------------------------------------------------------
-section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock)】"
+section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock + Allure Report)】"
 
-log "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock)..."
-docker compose -f "$COMPOSE_FILE" up -d postgres-db mock-service
+log "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock + Allure Report)..."
+docker compose -f "$COMPOSE_FILE" up -d postgres-db mock-service allure
 
 log "等待 PostgreSQL 数据库健康就绪..."
 for i in $(seq 1 60); do
@@ -155,6 +155,12 @@ if curl -fsS -m 5 "http://localhost:4010/api/v1/health" 2>/dev/null | grep -q '"
   ok "Prism HTTP Mock 服务已就绪 (端口: 4010, /api/v1/health -> UP)"
 else
   warn "Prism Mock 服务未返回预期健康状态"
+fi
+
+if curl -fsS -m 5 -I "http://localhost:5050" 2>/dev/null | grep -q "200 OK"; then
+  ok "Allure 图形化报告服务已就绪 (端口: 5050, http://localhost:5050)"
+else
+  warn "Allure 报告服务未完全就绪 (启动中)"
 fi
 
 # ------------------------------------------------------------------------------
@@ -270,6 +276,7 @@ echo -e "\n${C_CYAN}============================================================
 if [ "$ALL_TESTS_PASSED" = true ]; then
   echo -e "${C_GREEN}【全流程验证成功】软件测试环境全部 6 大架构层级就绪，测试套件 100% 跑通！${C_RESET}"
   echo -e "${C_GRAY}  * 停止基础设施: docker compose -f docker-compose.infra.yml down${C_RESET}"
+  echo -e "${C_CYAN}  * Allure 图形报告: http://localhost:5050${C_RESET}"
   echo -e "${C_GRAY}  * 重新执行测试: docker compose -f docker-compose.infra.yml exec test-runner pytest tests/api/${C_RESET}"
   exit 0
 else
