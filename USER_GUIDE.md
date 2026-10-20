@@ -82,6 +82,36 @@ chmod +x ./start.sh ./scripts/start.sh
 | `-SkipPerf` | `--skip-perf` | 跳过 k6 压测，仅执行 API 与 Web 测试 | 关闭 |
 | `-Mirror cn\|global\|auto` | `--mirror cn\|global\|auto` | 强制使用国内镜像源或官方源构建容器 | `cache` (自动缓存) |
 
+### 4. 一键环境清理与生命周期闭环 (用完即净)
+
+为了保障测试机或本地开发机环境“随开随用、用完即净”，项目内置了生命周期拆卸与清理脚本：
+
+- **Windows 一键清理**：
+  ```powershell
+  # 1. 标准清理：停止并移除全部容器与网络，释放 ADB 端口，清理测试缓存
+  .\clean.bat
+
+  # 2. 深度清理：同时清除 PostgreSQL 数据库持久化卷 (数据重置)
+  .\clean.bat -v
+
+  # 3. 彻底出厂重置：同时删除本地 6.5GB 运行时镜像
+  .\clean.bat -a
+  ```
+- **Linux 一键清理**：
+  ```bash
+  ./clean.sh        # 标准清理
+  ./clean.sh -v     # 包含数据卷清理
+  ./clean.sh -a     # 包含本地镜像清理
+  ```
+
+### 5. ⚡ 开发者加速：GHCR 预编译镜像免本地长耗时编译
+
+本地全量构建包含 Playwright 完整浏览器驱动、Node 20、k6、Python 3.12 的测试运行时镜像约需 **15~20 分钟**（体积约 6.5GB）。
+
+为此，我们引入了 GitHub Actions 流水线，代码提交后**全自动构建并推送到 GitHub 容器注册表 (GHCR)**：
+* **公开托管镜像**：`ghcr.io/yotoha0303/qa-runtime:latest`
+* **启动机制**：执行 `start.bat` / `start.sh` 时，系统会自动优先从 GHCR 极速拉取预编译镜像（通常仅需 **1~2 分钟**），彻底消除本地长时间编译的痛点；当网络离线或无权限时，脚本会自动平滑回退为本地 Dockerfile 构建。
+
 ---
 
 ## 四、各个服务与工具的使用方法

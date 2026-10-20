@@ -88,6 +88,23 @@ sudo ./scripts/setup_host_tools_linux.sh
 * Windows: `-RunTests` (默认开启), `-SkipTests`, `-SkipHostTools`, `-SkipMobile`, `-WithMobile`, `-WithPerf` (默认开启), `-SkipPerf`, `-OpenVsCode`, `-Mirror cn|global|auto|cache`
 * Linux: `--run-tests` (默认开启), `--up-only` / `--skip-tests`, `--skip-host-tools`, `--skip-mobile`, `--mobile`, `--perf` (默认开启), `--skip-perf`, `--mirror cn|global|auto`
 
+### 一键清理入口（随开随用、用完即净）
+
+测试执行完毕后，执行以下命令即可实现环境生命周期的完整闭环（停止全部容器、释放端口、清理网络与测试缓存）：
+
+| 平台 | 入口 | 说明 |
+| :--- | :--- | :--- |
+| **Windows** | `.\clean.bat` | 停止所有容器与网络，释放 ADB 5037 端口，清理测试缓存 |
+| **Linux** | `./clean.sh` | 停止所有容器，清理测试缓存 |
+
+> 常用清理选项：加 `-v` 可同时清理 Docker 数据卷（PostgreSQL 数据库重置）；加 `-a` 可彻底清理（包含删除本地 6.5GB 镜像）。
+
+### ⚡ 开发者加速：GHCR 预编译镜像
+
+为解决新成员本地编译 6.5GB 镜像耗时过长（15~20 分钟）的痛点，本项目通过 [GitHub Actions](.github/workflows/publish_ghcr.yml) 全自动将测试运行时镜像构建并托管至 **GitHub Container Registry (GHCR)**：
+* **公开镜像地址**：`ghcr.io/yotoha0303/qa-runtime:latest`
+* **无感加速**：`start.bat` / `start.sh` 在检测到本地无镜像时，将**优先自动从 GHCR 极速拉取预编译镜像**（约 2 分钟），拉取失败或离线时才自动回退为本地 Dockerfile 构建。
+
 ### 手动分步执行
 
 #### 第 1 步：启动测试编排与存储依赖 (Postgres + Mock)

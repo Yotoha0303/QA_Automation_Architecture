@@ -168,9 +168,16 @@ fi
 # ------------------------------------------------------------------------------
 section "【层级 3: 自动化测试运行时 (Dev Container 统一镜像)】"
 
-if ! docker images -q qa-runtime:local 2>/dev/null | grep -q .; then
-  log "未检测到测试运行时镜像 qa-runtime:local，正在执行构建..."
-  docker compose -f "$COMPOSE_FILE" build test-runner
+PREBUILT_IMAGE="${QA_RUNTIME_IMAGE:-ghcr.io/yotoha0303/qa-runtime:latest}"
+if ! docker images -q qa-runtime:local 2>/dev/null | grep -q . && ! docker images -q "$PREBUILT_IMAGE" 2>/dev/null | grep -q .; then
+  log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE)..."
+  if docker pull "$PREBUILT_IMAGE" 2>/dev/null; then
+    docker tag "$PREBUILT_IMAGE" qa-runtime:local 2>/dev/null || true
+    ok "成功拉取并关联 GHCR 预编译镜像: $PREBUILT_IMAGE"
+  else
+    warn "GHCR 预编译镜像未拉取成功，正在执行本地自动化构建..."
+    docker compose -f "$COMPOSE_FILE" build test-runner
+  fi
 fi
 ok "测试运行时镜像已就绪: qa-runtime:local"
 

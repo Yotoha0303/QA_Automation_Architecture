@@ -253,15 +253,25 @@ if ($allureHealthy) {
 # ------------------------------------------------------------------------------
 Section "【层级 3: 自动化测试运行时 (Dev Container 统一镜像)】"
 
-# 检查本地是否存在运行时镜像，不存在则自动构建
-$hasRuntimeImage = [bool](docker images -q qa-runtime:local 2>$null)
+# 检查本地是否存在运行时镜像，不存在则优先从 GHCR 拉取预编译镜像，失败则自动本地构建
+$prebuiltImage = if ($env:QA_RUNTIME_IMAGE) { $env:QA_RUNTIME_IMAGE } else { "ghcr.io/yotoha0303/qa-runtime:latest" }
+$hasRuntimeImage = [bool](docker images -q qa-runtime:local 2>$null) -or [bool](docker images -q $prebuiltImage 2>$null)
+
 if (-not $hasRuntimeImage) {
-    Step "未检测到测试运行时镜像 qa-runtime:local，正在执行构建 (包含 Playwright/Python/k6)..."
-    docker compose -f "$ComposeFile" build test-runner
-    if ($LASTEXITCODE -ne 0) {
-        Fail "测试运行时镜像 qa-runtime:local 构建失败"
-        Add-Score "3. 测试运行时" "qa-runtime 镜像" "× 构建失败" "Build exit != 0"
-        exit 1
+    Step "未检测到本地运行时镜像，优先从 GitHub Container Registry (GHCR) 拉取预编译镜像..."
+    Write-Host "    尝试拉取: $prebuiltImage (免去本地耗时 15 分钟编译 6.5GB)..." -ForegroundColor Cyan
+    docker pull $prebuiltImage 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        docker tag $prebuiltImage qa-runtime:local 2>$null
+        OK "成功拉取并关联 GHCR 预编译镜像: $prebuiltImage"
+    } else {
+        Warn "GHCR 预编译镜像未拉取成功 (网络离线或尚未发布至 GHCR)，正在执行本地自动化构建..."
+        docker compose -f "$ComposeFile" build test-runner
+        if ($LASTEXITCODE -ne 0) {
+            Fail "测试运行时镜像构建失败"
+            Add-Score "3. 测试运行时" "qa-runtime 镜像" "× 构建失败" "Build exit != 0"
+            exit 1
+        }
     }
 }
 OK "测试运行时镜像就绪: qa-runtime:local"
