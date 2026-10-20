@@ -21,6 +21,96 @@
 | **5. 缺陷管理** | Jira | 官方 SaaS / API Token 集成 | `config/jira_config.env.example`, `conftest.py` |
 | **6. 持续集成** | GitHub Actions | 远端托管 Runner / 混合 Runner | `.github/workflows/ci.yml` |
 
+### 架构全景与数据流图 (Architecture & Data Flow)
+
+```mermaid
+flowchart TD
+    subgraph Host["🖥️ 宿主环境层 (Host Tools & Developer Workspace)"]
+        direction TB
+        Dev["👤 测试工程师 / CI 流水线"]
+        Entry["🚀 一键入口: start.bat / start.sh / clean.bat / clean.sh"]
+        CodeIDE["💻 VS Code (附着 Dev Container 模式)"]
+        Browser["🌐 Web 浏览器 (访问 Allure 大屏 / Mock 接口)"]
+        ApifoxHost["🦊 Apifox Desktop (接口设计与调试)"]
+        WireSharkHost["🦈 Wireshark / TShark (底层网络抓包)"]
+        ADBHost["📱 宿主 ADB Server (监听 0.0.0.0:5037)"]
+        Device["📲 Android 模拟器 / 物理真机"]
+        WorkspaceFolder["📂 本地代码仓库 (/workspace 挂载源)"]
+        AllureResultsDir["📁 本地测试结果: ./allure-results"]
+
+        Dev --> Entry
+        Dev --> CodeIDE
+        Dev --> Browser
+        Dev --> ApifoxHost
+        Dev --> WireSharkHost
+        ADBHost <--> Device
+    end
+
+    subgraph GHCR_Cloud["☁️ GitHub 容器注册表 (GHCR)"]
+        GHCRImage["📦 ghcr.io/yotoha0303/qa-runtime:latest (预编译 6.5GB 镜像)"]
+    end
+
+    subgraph Compose["🐳 Docker Compose 基础设施与运行时编排 (qa-infra-net 网桥)"]
+        direction TB
+
+        subgraph SvcRuntime["⚡ 层级 3: 自动化测试运行时容器 (qa-test-runner)"]
+            PyTest["🧪 Pytest 测试框架 + conftest.py (自动注入 --alluredir)"]
+            PlaywrightEng["🎭 Playwright (Chromium / Firefox / WebKit 无头浏览器)"]
+            K6Eng["📈 k6 高并发压测引擎"]
+            ApifoxCli["🛠️ apifox-cli 自动化命令行"]
+            AppiumClient["🔌 Appium Python 客户端"]
+        end
+
+        subgraph SvcStorage["🗄️ 层级 2: 存储依赖与 Mock 服务"]
+            PG["🐘 PostgreSQL 16 数据库 (qa-postgres:5432)"]
+            MockSvc["🎭 Prism HTTP Mock 服务 (qa-mock-service:4010)"]
+            MockSchema["📄 mock-schemas/sample_api.yaml (只读契约)"]
+            MockSchema --> MockSvc
+        end
+
+        subgraph SvcReporting["📊 层级 2: 可视化分析报告服务"]
+            AllureSvc["📈 Allure Docker Service (qa-allure:5050)"]
+            AllureReportStore[("💾 qa_allure_reports 数据卷")]
+            AllureSvc <--> AllureReportStore
+        end
+
+        subgraph SvcMobile["📱 层级 4: 移动端自动化桥接"]
+            AppiumSvc["🤖 Appium Server 容器 (qa-appium:4723)"]
+        end
+
+    end
+
+    subgraph SaaS_Cloud["☁️ 外部云端协同服务 (SaaS)"]
+        JiraSaaS["🐞 Jira Cloud REST API (自动化创建 Bug 单)"]
+        TargetWeb["🌍 待测外部 Web 站点 / 被测业务系统"]
+    end
+
+    %% 数据流连接
+    GHCRImage -.->|"免本地编译极速拉取"| SvcRuntime
+    WorkspaceFolder <==>|"目录双向同步绑定 (:cached)"| SvcRuntime
+    CodeIDE <==>|"vscode-remote 协议穿透挂载"| SvcRuntime
+
+    %% 测试运行数据流
+    PyTest -->|"1. 数据库验证与测试数据存取 (5432)"| PG
+    PyTest -->|"2. 接口调用与契约测试 (4010)"| MockSvc
+    PlaywrightEng -->|"3. E2E 浏览器无头页面渲染与断言"| TargetWeb
+    K6Eng -->|"4. 高并发接口阶梯性能压测 (10 VUs)"| MockSvc
+    AppiumClient -->|"5. 自动化指令转发 (4723)"| AppiumSvc
+    AppiumSvc <==>|"6. 跨主机网关通讯 (host.docker.internal:5037)"| ADBHost
+
+    %% Allure 报告流
+    PyTest -->|"7. 自动生成并输出用例 JSON 轨迹"| AllureResultsDir
+    AllureResultsDir <==>|"8. 实时监听变动 (每 3 秒检测)"| AllureSvc
+    Browser <==>|"9. 直观查阅实时渲染的交互式 Allure 大屏 (5050)"| AllureSvc
+
+    %% 缺陷管理流
+    PyTest -.->|"10. 用例失败触发 conftest 钩子提单"| JiraSaaS
+
+    %% 宿主工具直连
+    ApifoxHost -.->|"接口联调直连 (localhost:4010)"| MockSvc
+    Browser -.->|"健康检查直连 (localhost:4010/api/v1/health)"| MockSvc
+```
+
 ---
 
 ## 二、宿主环境部署入口 (Windows & Linux 双平台)
