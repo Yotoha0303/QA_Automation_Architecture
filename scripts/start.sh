@@ -133,21 +133,76 @@ docker info >/dev/null 2>&1 || { fail "Docker 引擎不可用，请启动 Docker
 ok "Docker 引擎就绪: $(docker --version)"
 
 # Docker Hub 镜像加速：国内网络下 registry-1.docker.io 常被拒绝或极慢，
-# 而 --mirror cn 只影响构建阶段，不影响 docker pull。此处仅在检测到
-# registry mirror 缺失时给出可执行的配置提示。
-check_registry_mirror() {
-  if docker info 2>/dev/null | grep -A5 "Registry Mirrors" | grep -q "https://"; then
-    ok "Docker Registry Mirror 已配置"
+# 而 --mirror cn 只影响构建阶段，不影响 docker pull。
+# 这里不依赖 /etc/docker/daemon.json (需要 sudo 重启)，而是在拉取失败时
+# 自动改用镜像前缀拉取，再 tag 回 compose 里写的原始镜像名。
+REGISTRY_MIRRORS="${QA_REGISTRY_MIRRORS:-docker.1ms.run,docker.m.daocloud.io,docker.1panel.live}"
+
+# 拉取镜像：先直连，失败后依次尝试各镜像前缀
+pull_image() {
+  local image="$1"
+  if docker image inspect "$image" >/dev/null 2>&1; then
     return 0
   fi
-  warn "未配置 Docker Registry Mirror，国内网络下拉取 postgres/prism/allure 镜像可能失败"
-  warn "  临时配置: sudo mkdir -p /etc/docker && sudo tee /etc/docker/daemon.json <<'EOF'"
-  warn '  { "registry-mirrors": ["https://docker.1ms.run", "https://docker.m.daocloud.io"] }'
-  warn "  EOF"
-  warn "  sudo systemctl restart docker"
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$image" >/dev/null 2>&1; then
+    return 0
+  fi
+  local m
+  IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
+  for m in "${_mirrors[@]}"; do
+    m="${m// /}"
+    [ -z "$m" ] && continue
+    # docker.io/library/postgres -> mirror/library/postgres
+    local mirrored="${image#docker.io/}"
+    mirrored="$m/$mirrored"
+    warn "直连拉取 $image 失败，尝试镜像源 $m ..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
+      docker tag "$mirrored" "$image" 2>/dev/null || true
+      ok "已通过 $m 拉取并标记为 $image"
+      return 0
+    fi
+  done
+  fail "无法拉取镜像: $image (直连与所有镜像源均失败)"
   return 1
 }
-check_registry_mirror || true
+
+ensure_base_images() {
+  local images="postgres:16-alpine stoplight/prism:5 frankescobar/allure-docker-service:latest"
+  local img
+  for img in $images; do
+    pull_image "$img" || return 1
+  done
+  ok "基础镜像已就绪 (postgres / prism / allure)"
+}
+
+# 构建用的基础镜像来自 MCR，不经过 registry-mirrors，国内网络常拉不动。
+# 构建前预拉取并打上 Dockerfile 里写的原始标签，命中本地缓存后 build 不再联网。
+PLAYWRIGHT_BASE_IMAGE="mcr.microsoft.com/playwright/python:v1.48.0-noble"
+ensure_build_base_image() {
+  if docker image inspect "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+    return 0
+  fi
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+    ok "Playwright 基础镜像已就绪"
+    return 0
+  fi
+  local m mirrored
+  IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
+  for m in "${_mirrors[@]}"; do
+    m="${m// /}"
+    [ -z "$m" ] && continue
+    # mcr.microsoft.com/playwright/python -> mirror/mcr.microsoft.com/playwright/python
+    mirrored="$m/mcr.microsoft.com/playwright/python:v1.48.0-noble"
+    warn "直连拉取基础镜像失败，尝试 $m ..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
+      docker tag "$mirrored" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
+      ok "已通过 $m 拉取 Playwright 基础镜像"
+      return 0
+    fi
+  done
+  warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
+  return 0
+}
 
 # ------------------------------------------------------------------------------
 # 【层级 2: 测试编排与存储依赖】
@@ -172,6 +227,9 @@ if [ -d "$PROJECT_ROOT/allure-results" ] && [ ! -w "$PROJECT_ROOT/allure-results
     warn "无法自动修正，请手动执行: sudo chown -R $(id -u):$(id -g) $PROJECT_ROOT/allure-results"
   fi
 fi
+
+log "预拉取基础镜像 (失败时自动切换镜像加速源)..."
+ensure_base_images || { fail "基础镜像准备失败，请检查网络或设置 QA_REGISTRY_MIRRORS"; exit 1; }
 
 log "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock + Allure Report)..."
 docker compose -f "$COMPOSE_FILE" up -d postgres-db mock-service allure
@@ -207,13 +265,15 @@ section "【层级 3: 自动化测试运行时 (Dev Container 统一镜像)】"
 PREBUILT_IMAGE="${QA_RUNTIME_IMAGE:-ghcr.io/yotoha0303/qa-runtime:latest}"
 # 拉取超时（秒）：避免网络"能连上但极慢"时无限挂起，永远不进入本地构建分支
 PULL_TIMEOUT="${QA_PULL_TIMEOUT:-600}"
-if ! docker images -q qa-runtime:local 2>/dev/null | grep -q . && ! docker images -q "$PREBUILT_IMAGE" 2>/dev/null | grep -q .; then
+if ! docker images -q qa-runtime:local 2>/dev/null | grep -q .; then
   log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE, 超时 ${PULL_TIMEOUT}s)..."
+  # GHCR 不走 registry mirror (多数公共镜像源不支持 GHCR)，仅加超时兜底
   if timeout "$PULL_TIMEOUT" docker pull "$PREBUILT_IMAGE" 2>/dev/null; then
     docker tag "$PREBUILT_IMAGE" qa-runtime:local 2>/dev/null || true
     ok "成功拉取并关联 GHCR 预编译镜像: $PREBUILT_IMAGE"
   else
     warn "GHCR 预编译镜像未拉取成功 (失败或超过 ${PULL_TIMEOUT}s)，正在执行本地自动化构建..."
+    ensure_build_base_image
     docker compose -f "$COMPOSE_FILE" build test-runner
   fi
 fi
