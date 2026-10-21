@@ -137,8 +137,40 @@ ok "Docker 引擎就绪: $(docker --version)"
 # 这里不依赖 /etc/docker/daemon.json (需要 sudo 重启)，而是在拉取失败时
 # 自动改用镜像前缀拉取，再 tag 回 compose 里写的原始镜像名。
 REGISTRY_MIRRORS="${QA_REGISTRY_MIRRORS:-docker.1ms.run,docker.m.daocloud.io,docker.1panel.live}"
+# 单源探活超时：先用极小的 hello-world 判断该源是否可用，避免在死源上
+# 让每个镜像都白等 QA_PULL_TIMEOUT 秒 (3 源 × 3 镜像 × 600s = 1.5 小时)
+MIRROR_PROBE_TIMEOUT="${QA_MIRROR_PROBE_TIMEOUT:-25}"
+HELLO_PROBE_TAG="qa-mirror-probe:latest"
 
-# 拉取镜像：先直连，失败后依次尝试各镜像前缀
+# 探测镜像源是否可用（拉取 25KB 的 hello-world）
+_mirror_alive() {
+  local m="$1"
+  if timeout "$MIRROR_PROBE_TIMEOUT" docker pull "$m/library/hello-world:latest" >/dev/null 2>&1; then
+    docker tag "$m/library/hello-world:latest" "$HELLO_PROBE_TAG" 2>/dev/null || true
+    return 0
+  fi
+  return 1
+}
+
+# 解析出第一个可用镜像源，结果写入 _USABLE_MIRROR (空表示都不可用)
+resolve_usable_mirror() {
+  _USABLE_MIRROR=""
+  local m
+  IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
+  for m in "${_mirrors[@]}"; do
+    m="${m// /}"
+    [ -z "$m" ] && continue
+    if _mirror_alive "$m"; then
+      _USABLE_MIRROR="$m"
+      ok "镜像加速源可用: $m"
+      return 0
+    fi
+    warn "镜像加速源不可用 (${MIRROR_PROBE_TIMEOUT}s 内未完成探活): $m"
+  done
+  return 1
+}
+
+# 拉取镜像：先直连，失败后使用探活通过的镜像前缀
 pull_image() {
   local image="$1"
   if docker image inspect "$image" >/dev/null 2>&1; then
@@ -147,28 +179,32 @@ pull_image() {
   if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$image" >/dev/null 2>&1; then
     return 0
   fi
-  local m
-  IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
-  for m in "${_mirrors[@]}"; do
-    m="${m// /}"
-    [ -z "$m" ] && continue
-    # docker.io/library/postgres -> mirror/library/postgres
-    local mirrored="${image#docker.io/}"
-    mirrored="$m/$mirrored"
-    warn "直连拉取 $image 失败，尝试镜像源 $m ..."
-    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
-      docker tag "$mirrored" "$image" 2>/dev/null || true
-      ok "已通过 $m 拉取并标记为 $image"
-      return 0
+  if [ -z "${_USABLE_MIRROR:-}" ]; then
+    if [ "${_MIRROR_RESOLVED:-0}" = "0" ]; then
+      _MIRROR_RESOLVED=1
+      resolve_usable_mirror || true
     fi
-  done
-  fail "无法拉取镜像: $image (直连与所有镜像源均失败)"
+  fi
+  if [ -z "${_USABLE_MIRROR:-}" ]; then
+    fail "无法拉取镜像: $image (直连失败，且无可用镜像加速源)"
+    return 1
+  fi
+  local mirrored="${image#docker.io/}"
+  mirrored="$_USABLE_MIRROR/$mirrored"
+  warn "直连拉取 $image 失败，改用镜像源 $_USABLE_MIRROR ..."
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
+    docker tag "$mirrored" "$image" 2>/dev/null || true
+    ok "已通过 $_USABLE_MIRROR 拉取并标记为 $image"
+    return 0
+  fi
+  fail "无法拉取镜像: $image (直连与镜像源均失败)"
   return 1
 }
 
 ensure_base_images() {
   local images="postgres:16-alpine stoplight/prism:5 frankescobar/allure-docker-service:latest"
   local img
+  # 直连失败才需要镜像源，先探活一次，避免每个镜像都重复试错
   for img in $images; do
     pull_image "$img" || return 1
   done
@@ -186,20 +222,23 @@ ensure_build_base_image() {
     ok "Playwright 基础镜像已就绪"
     return 0
   fi
-  local m mirrored
+  local mirrored
   IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
-  for m in "${_mirrors[@]}"; do
-    m="${m// /}"
-    [ -z "$m" ] && continue
-    # mcr.microsoft.com/playwright/python -> mirror/mcr.microsoft.com/playwright/python
-    mirrored="$m/mcr.microsoft.com/playwright/python:v1.48.0-noble"
-    warn "直连拉取基础镜像失败，尝试 $m ..."
-    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
-      docker tag "$mirrored" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
-      ok "已通过 $m 拉取 Playwright 基础镜像"
-      return 0
-    fi
-  done
+  # 同样先探活，避免在死源上白等 QA_PULL_TIMEOUT
+  if [ "${_MIRROR_RESOLVED:-0}" = "0" ]; then
+    _MIRROR_RESOLVED=1
+    resolve_usable_mirror || true
+  fi
+  if [ -z "${_USABLE_MIRROR:-}" ]; then
+    warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
+    return 0
+  fi
+  mirrored="$_USABLE_MIRROR/mcr.microsoft.com/playwright/python:v1.48.0-noble"
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
+    docker tag "$mirrored" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
+    ok "已通过 $_USABLE_MIRROR 拉取 Playwright 基础镜像"
+    return 0
+  fi
   warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
   return 0
 }
