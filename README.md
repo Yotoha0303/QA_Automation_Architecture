@@ -199,6 +199,10 @@ sudo ./scripts/setup_host_tools_linux.sh
 
 网络环境：所有下载支持国内镜像 / 官方源切换，默认自动探测并缓存。
 
+自动探测规则：**上游可达**（MCR + Docker Hub）即判定为 `global`，全部走官方源；上游不可达但国内镜像站可达则判定为 `cn`。海外机器通常自动走 `global`，无需额外参数。
+
+> **前置条件**：宿主机需自备 `git` 与 `docker`（或先执行 `scripts/setup_host_tools_linux.sh` 安装）。`git clone` 之后即可直接运行启动脚本。
+
 ```powershell
 # Windows
 .\start.bat -Mirror cn        # 强制国内镜像源

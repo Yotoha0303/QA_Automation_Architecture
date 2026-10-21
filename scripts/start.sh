@@ -68,11 +68,26 @@ warn() { echo -e "    ${C_YELLOW}[!] $*${C_RESET}"; }
 fail() { echo -e "    ${C_RED}[×] $*${C_RESET}"; }
 
 # 网络档位判定
+#   上游可达 (MCR / Docker Hub / GHCR) -> global，全部走官方源
+#   上游不可达但国内镜像站可达         -> cn，构建走国内源
+# 说明: 不能用"国内镜像站能连上"来判断 cn —— 海外机器通常也能连上，会被误判。
+# 返回 200/401/403 都视为可达 (registry 的 /v2/ 未认证时返回 401)。
+_url_reachable() {
+  local code
+  code=$(curl -s -o /dev/null -m "${2:-5}" -w '%{http_code}' "$1" 2>/dev/null || echo 000)
+  case "$code" in 200|401|403) return 0 ;; *) return 1 ;; esac
+}
 detect_profile() {
-  local cn_ok=false proxy_ok=false
-  curl -fsS -m 5 -o /dev/null https://registry.npmmirror.com 2>/dev/null && cn_ok=true || true
-  curl -fsS -m 5 -o /dev/null https://ghfast.top 2>/dev/null && proxy_ok=true || true
-  if [ "$cn_ok" = true ] || [ "$proxy_ok" = true ]; then echo "cn"; else echo "global"; fi
+  if _url_reachable https://mcr.microsoft.com/v2/ \
+     && _url_reachable https://registry-1.docker.io/v2/ ; then
+    echo "global"
+    return
+  fi
+  if _url_reachable https://registry.npmmirror.com; then
+    echo "cn"
+    return
+  fi
+  echo "global"
 }
 
 PROFILE="$MIRROR_MODE"
@@ -156,8 +171,12 @@ _mirror_alive() {
 }
 
 # 解析出第一个可用镜像源，结果写入 _USABLE_MIRROR (空表示都不可用)
+# global 档位 (上游可达) 直接跳过镜像源，避免在无效源上浪费时间。
 resolve_usable_mirror() {
   _USABLE_MIRROR=""
+  if [ "${PROFILE:-global}" = "global" ]; then
+    return 1
+  fi
   local m
   IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
   for m in "${_mirrors[@]}"; do
@@ -227,8 +246,17 @@ ensure_build_base_image() {
     return 0
   fi
 
-  # 顺序: 镜像源 -> 直连。
-  # MCR 直连在国内多数网络下只有 ~100KB/s，645MB 需要 1 小时以上，所以先试镜像源。
+  # global 档位 (海外/上游可达): 直接拉 MCR，不走任何镜像源
+  if [ "${PROFILE:-global}" = "global" ]; then
+    log "拉取 Playwright 基础镜像 (直连 MCR)..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+      ok "Playwright 基础镜像已就绪 (直连 MCR)"
+      return 0
+    fi
+    warn "直连 MCR 未在 ${QA_PULL_TIMEOUT:-600}s 内完成"
+  fi
+
+  # cn 档位: 先试 MCR 专用镜像源。
   # MCR 的镜像源格式不是 <mirror>/mcr.microsoft.com/...，而是分 registry 域名，
   # DaoCloud 的入口: mcr.m.daocloud.io/<repo> (去掉 mcr.microsoft.com/ 前缀)。
   local cand
@@ -246,10 +274,13 @@ ensure_build_base_image() {
     warn "镜像源未在 ${QA_PULL_TIMEOUT:-600}s 内完成，继续下一个"
   done
 
-  warn "镜像源均不可用，尝试直连 MCR (可能很慢)..."
-  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
-    ok "Playwright 基础镜像已就绪 (直连)"
-    return 0
+  # 兜底: 直连 (global 档位已试过则跳过)
+  if [ "${PROFILE:-global}" != "global" ]; then
+    warn "镜像源均不可用，尝试直连 MCR (可能很慢)..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+      ok "Playwright 基础镜像已就绪 (直连)"
+      return 0
+    fi
   fi
 
   warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
@@ -315,8 +346,13 @@ fi
 section "【层级 3: 自动化测试运行时 (Dev Container 统一镜像)】"
 
 PREBUILT_IMAGE="${QA_RUNTIME_IMAGE:-ghcr.io/yotoha0303/qa-runtime:latest}"
-# 拉取超时（秒）：避免网络"能连上但极慢"时无限挂起，永远不进入本地构建分支
-PULL_TIMEOUT="${QA_PULL_TIMEOUT:-600}"
+# 拉取超时（秒）：避免网络"能连上但极慢"时无限挂起，永远不进入本地构建分支。
+# global 档位 (海外/上游可达) 给更长的超时：镜像是 6.5GB，正常网络也需要数分钟到十几分钟。
+if [ "${PROFILE:-global}" = "global" ]; then
+  PULL_TIMEOUT="${QA_PULL_TIMEOUT:-3600}"
+else
+  PULL_TIMEOUT="${QA_PULL_TIMEOUT:-600}"
+fi
 if ! docker images -q qa-runtime:local 2>/dev/null | grep -q .; then
   log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE, 超时 ${PULL_TIMEOUT}s)..."
   # GHCR 不走 registry mirror (多数公共镜像源不支持 GHCR)，仅加超时兜底
