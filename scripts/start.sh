@@ -193,6 +193,11 @@ pull_image() {
     return 1
   fi
   local mirrored="${image#docker.io/}"
+  # Docker Hub 官方镜像需要 library/ 前缀，镜像源按完整 registry 路径解析
+  case "$mirrored" in
+    */*) : ;;
+    *) mirrored="library/$mirrored" ;;
+  esac
   mirrored="$_USABLE_MIRROR/$mirrored"
   warn "直连拉取 $image 失败，改用镜像源 $_USABLE_MIRROR ..."
   if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
