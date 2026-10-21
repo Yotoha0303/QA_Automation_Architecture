@@ -51,6 +51,8 @@ services:
         GITHUB_PROXY: "${GITHUB_PROXY:-https://ghfast.top}"
         # Playwright 浏览器内核下载源；留空时 Dockerfile 按 QA_CN_BUILD 自动选择
         PLAYWRIGHT_DOWNLOAD_HOST: "${PLAYWRIGHT_DOWNLOAD_HOST:-}"
+        # apifox-cli 为可选组件，限时安装，超时不影响构建
+        APIFOX_CLI_TIMEOUT: "${APIFOX_CLI_TIMEOUT:-300}"
     image: qa-runtime:local
     container_name: qa-test-runner
     init: true
