@@ -59,23 +59,46 @@ fi
 echo "--> 4. 安装 Docker CE 与 Docker Compose 插件..."
 if ! command -v docker &> /dev/null; then
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
+    UBUNTU_CODENAME=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+    DOCKER_OK=false
 
-    UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $UBUNTU_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    apt-get update -y
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-    REAL_USER=${SUDO_USER:-$USER}
-    if [ "$REAL_USER" != "root" ]; then
-        usermod -aG docker "$REAL_USER" || true
+    # 首选: Docker 官方源 (download.docker.com)
+    if curl -fsSL --connect-timeout 10 --max-time 60 https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc 2>/dev/null; then
+        chmod a+r /etc/apt/keyrings/docker.asc
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $UBUNTU_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        if apt-get update -y >/dev/null 2>&1 && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+            DOCKER_OK=true
+        fi
     fi
-    systemctl enable docker
-    systemctl start docker
-    echo "[√] Docker & Compose 安装完成"
+
+    # 回退: 发行版官方仓库 (速度慢或官方源不可用时的兜底)
+    if [ "$DOCKER_OK" != true ]; then
+        echo "[!] Docker 官方源安装失败或不可用，回退到发行版仓库 (docker.io + docker-compose-v2)..."
+        rm -f /etc/apt/sources.list.d/docker.list
+        apt-get update -y
+        apt-get install -y docker.io docker-compose-v2 || apt-get install -y docker.io docker-compose
+        DOCKER_OK=true
+    fi
+
+    if [ "$DOCKER_OK" = true ] && command -v docker &> /dev/null; then
+        REAL_USER=${SUDO_USER:-$USER}
+        if [ "$REAL_USER" != "root" ]; then
+            usermod -aG docker "$REAL_USER" || true
+        fi
+        systemctl enable docker 2>/dev/null || true
+        systemctl start docker 2>/dev/null || true
+        echo "[√] Docker & Compose 安装完成: $(docker --version)"
+    else
+        echo "[×] Docker 安装失败，请手动安装后重试"
+        exit 1
+    fi
 else
     echo "[√] Docker 已存在，跳过"
+    # Snap 版 Docker 不支持项目目录的 bind mount，给出明确告警
+    if docker info 2>/dev/null | grep -qi "snap"; then
+        echo "[!] 检测到 Snap 版 Docker：它无法挂载项目目录 (仅支持 \$HOME 下路径)。"
+        echo "    建议卸载后使用 Docker CE: sudo snap remove docker && 重新运行本脚本"
+    fi
 fi
 
 # 5. 下载并安装 Apifox Desktop for Linux (官方真实验证链接)
@@ -83,11 +106,20 @@ echo "--> 5. 下载并安装 Apifox Desktop..."
 if ! command -v apifox &> /dev/null && [ ! -d "/opt/Apifox" ]; then
     TMP_DIR=$(mktemp -d)
     echo "    正在下载 Apifox deb 归档包..."
-    wget -c "https://file-assets.apifox.com/download/Apifox-linux-deb-latest.zip" -O "$TMP_DIR/apifox.zip"
-    unzip -q "$TMP_DIR/apifox.zip" -d "$TMP_DIR"
-    dpkg -i "$TMP_DIR"/*.deb || apt-get install -f -y
+    if wget -c "https://file-assets.apifox.com/download/Apifox-linux-deb-latest.zip" -O "$TMP_DIR/apifox.zip" \
+       && unzip -q "$TMP_DIR/apifox.zip" -d "$TMP_DIR"; then
+        # dpkg 失败时先补齐依赖，再重试安装本 deb (仅 apt-get install -f 不会重装它)
+        if ! dpkg -i "$TMP_DIR"/*.deb; then
+            apt-get install -f -y
+            dpkg -i "$TMP_DIR"/*.deb || true
+        fi
+    fi
     rm -rf "$TMP_DIR"
-    echo "[√] Apifox Desktop 安装完成"
+    if command -v apifox &> /dev/null || [ -d "/opt/Apifox" ]; then
+        echo "[√] Apifox Desktop 安装完成"
+    else
+        echo "[!] Apifox Desktop 安装失败（不影响自动化测试，可稍后手动安装）"
+    fi
 else
     echo "[√] Apifox 已存在，跳过"
 fi

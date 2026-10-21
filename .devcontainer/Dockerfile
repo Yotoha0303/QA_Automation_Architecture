@@ -82,8 +82,19 @@ RUN if [ "$QA_CN_BUILD" = "1" ]; then \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
 # 7. 预装 Playwright 浏览器内核 (Chromium, Firefox, WebKit)
-#    基础镜像已内置，此处确保与包版本匹配；国内构建可另行设置 PLAYWRIGHT_DOWNLOAD_HOST
-RUN playwright install --with-deps
+#    国内构建: 走 npmmirror 二进制源 (实测从 17 分钟未完成缩短至 ~150 秒)
+#    官方构建: 走默认 cdn.playwright.dev
+#    也可在构建时覆盖: docker compose build --build-arg PLAYWRIGHT_DOWNLOAD_HOST=<url>
+ARG PLAYWRIGHT_DOWNLOAD_HOST=""
+RUN if [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then \
+        ENV_HOST="$PLAYWRIGHT_DOWNLOAD_HOST"; \
+    elif [ "$QA_CN_BUILD" = "1" ]; then \
+        ENV_HOST="https://cdn.npmmirror.com/binaries/playwright"; \
+    else \
+        ENV_HOST=""; \
+    fi \
+    && if [ -n "$ENV_HOST" ]; then PLAYWRIGHT_DOWNLOAD_HOST="$ENV_HOST" playwright install --with-deps; \
+       else playwright install --with-deps; fi
 
 WORKDIR /workspace
 CMD ["/bin/bash"]

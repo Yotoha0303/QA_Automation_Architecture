@@ -132,10 +132,46 @@ command -v docker >/dev/null 2>&1 || { fail "未检测到 docker，请先安装 
 docker info >/dev/null 2>&1 || { fail "Docker 引擎不可用，请启动 Docker 服务 (sudo systemctl start docker)"; exit 1; }
 ok "Docker 引擎就绪: $(docker --version)"
 
+# Docker Hub 镜像加速：国内网络下 registry-1.docker.io 常被拒绝或极慢，
+# 而 --mirror cn 只影响构建阶段，不影响 docker pull。此处仅在检测到
+# registry mirror 缺失时给出可执行的配置提示。
+check_registry_mirror() {
+  if docker info 2>/dev/null | grep -A5 "Registry Mirrors" | grep -q "https://"; then
+    ok "Docker Registry Mirror 已配置"
+    return 0
+  fi
+  warn "未配置 Docker Registry Mirror，国内网络下拉取 postgres/prism/allure 镜像可能失败"
+  warn "  临时配置: sudo mkdir -p /etc/docker && sudo tee /etc/docker/daemon.json <<'EOF'"
+  warn '  { "registry-mirrors": ["https://docker.1ms.run", "https://docker.m.daocloud.io"] }'
+  warn "  EOF"
+  warn "  sudo systemctl restart docker"
+  return 1
+}
+check_registry_mirror || true
+
 # ------------------------------------------------------------------------------
 # 【层级 2: 测试编排与存储依赖】
 # ------------------------------------------------------------------------------
 section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock + Allure Report)】"
+
+# 以宿主机当前用户身份运行容器，保证 allure-results 等挂载目录的属主与宿主机一致。
+# 否则 Allure/test-runner 容器以 root 写入后，普通用户再跑 pytest 会 PermissionError。
+export QA_UID="${QA_UID:-$(id -u)}"
+export QA_GID="${QA_GID:-$(id -g)}"
+
+# 预创建挂载目录，避免 Docker 以 root 创建后普通用户无权写入
+mkdir -p "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/mock-schemas" "$PROJECT_ROOT/sql" 2>/dev/null || true
+
+# 历史运行可能已把 allure-results 写成 root:root，普通用户无法覆盖。
+# 检测到不可写时用 sudo 修复属主（旧版本容器的遗留状态）。
+if [ -d "$PROJECT_ROOT/allure-results" ] && [ ! -w "$PROJECT_ROOT/allure-results" ]; then
+  warn "allure-results 当前用户不可写 (可能被历史 root 容器写入)，尝试修正属主..."
+  if sudo -n chown -R "$(id -u):$(id -g)" "$PROJECT_ROOT/allure-results" 2>/dev/null; then
+    ok "已修正 allure-results 属主为 $(id -un)"
+  else
+    warn "无法自动修正，请手动执行: sudo chown -R $(id -u):$(id -g) $PROJECT_ROOT/allure-results"
+  fi
+fi
 
 log "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock + Allure Report)..."
 docker compose -f "$COMPOSE_FILE" up -d postgres-db mock-service allure
@@ -169,13 +205,15 @@ fi
 section "【层级 3: 自动化测试运行时 (Dev Container 统一镜像)】"
 
 PREBUILT_IMAGE="${QA_RUNTIME_IMAGE:-ghcr.io/yotoha0303/qa-runtime:latest}"
+# 拉取超时（秒）：避免网络"能连上但极慢"时无限挂起，永远不进入本地构建分支
+PULL_TIMEOUT="${QA_PULL_TIMEOUT:-600}"
 if ! docker images -q qa-runtime:local 2>/dev/null | grep -q . && ! docker images -q "$PREBUILT_IMAGE" 2>/dev/null | grep -q .; then
-  log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE)..."
-  if docker pull "$PREBUILT_IMAGE" 2>/dev/null; then
+  log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE, 超时 ${PULL_TIMEOUT}s)..."
+  if timeout "$PULL_TIMEOUT" docker pull "$PREBUILT_IMAGE" 2>/dev/null; then
     docker tag "$PREBUILT_IMAGE" qa-runtime:local 2>/dev/null || true
     ok "成功拉取并关联 GHCR 预编译镜像: $PREBUILT_IMAGE"
   else
-    warn "GHCR 预编译镜像未拉取成功，正在执行本地自动化构建..."
+    warn "GHCR 预编译镜像未拉取成功 (失败或超过 ${PULL_TIMEOUT}s)，正在执行本地自动化构建..."
     docker compose -f "$COMPOSE_FILE" build test-runner
   fi
 fi

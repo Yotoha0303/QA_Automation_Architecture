@@ -49,9 +49,15 @@ services:
         # 国内构建（Ubuntu/Node/k6/npm/pip 镜像源）；start.ps1/start.sh -Mirror cn 时注入 1
         QA_CN_BUILD: "${QA_CN_BUILD:-0}"
         GITHUB_PROXY: "${GITHUB_PROXY:-https://ghfast.top}"
+        # Playwright 浏览器内核下载源；留空时 Dockerfile 按 QA_CN_BUILD 自动选择
+        PLAYWRIGHT_DOWNLOAD_HOST: "${PLAYWRIGHT_DOWNLOAD_HOST:-}"
     image: qa-runtime:local
     container_name: qa-test-runner
     init: true
+    # 以宿主机当前用户身份运行，避免测试产物 (allure-results 等) 在 Linux 上
+    # 被写成 root:root，导致后续以普通用户重跑 pytest 时出现 PermissionError。
+    # Linux 下由 start.sh 注入 QA_UID/QA_GID；Windows 默认 0(root)，行为不变。
+    user: "${QA_UID:-0}:${QA_GID:-0}"
     command: ["sleep", "infinity"]
     working_dir: /workspace
     environment:
@@ -94,10 +100,13 @@ services:
   # 5. Allure 自动化测试可视化报告服务 (独立容器)
   # 实时监听 ./allure-results 目录，生成交互式 HTML 图形化报告
   # 访问地址: http://localhost:5050
+  # user: 以宿主机当前用户身份运行，避免在 Linux 上把 allure-results 写成 root:root
+  #       导致后续 pytest 的 allure-pytest 插件无写入权限 (PermissionError)
   allure:
     image: frankescobar/allure-docker-service:latest
     container_name: qa-allure
     restart: unless-stopped
+    user: "${QA_UID:-0}:${QA_GID:-0}"
     ports:
       - "5050:5050"
     environment:
