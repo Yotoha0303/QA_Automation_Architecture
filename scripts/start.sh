@@ -141,7 +141,8 @@ REGISTRY_MIRRORS="${QA_REGISTRY_MIRRORS:-docker.1ms.run,docker.m.daocloud.io,doc
 # 让每个镜像都白等 QA_PULL_TIMEOUT 秒 (3 源 × 3 镜像 × 600s = 1.5 小时)
 MIRROR_PROBE_TIMEOUT="${QA_MIRROR_PROBE_TIMEOUT:-25}"
 # 探活用的真实镜像：必须能取到 manifest 才算可用 (hello-world 可能命中缓存而误判)
-MIRROR_PROBE_IMAGE="library/busybox:latest"
+MIRROR_PROBE_IMAGE="library/busybox"
+MIRROR_PROBE_TAG="latest"
 
 # 探测镜像源是否可用：HEAD 目标镜像 manifest，必须返回 200
 # 注意：仅看 /v2/ 是否 401 会误判 —— 部分镜像源 /v2/ 返回 401 但 token 服务不可用，
@@ -150,7 +151,7 @@ _mirror_alive() {
   local m="$1" code
   code=$(curl -s -o /dev/null -m "$MIRROR_PROBE_TIMEOUT" -w '%{http_code}' \
     -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' \
-    "https://$m/v2/$MIRROR_PROBE_IMAGE/manifests/latest" 2>/dev/null || echo 000)
+    "https://$m/v2/$MIRROR_PROBE_IMAGE/manifests/$MIRROR_PROBE_TAG" 2>/dev/null || echo 000)
   [ "$code" = "200" ]
 }
 
