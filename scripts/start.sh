@@ -74,6 +74,14 @@ fail() { echo -e "    ${C_RED}[×] $*${C_RESET}"; }
 # 返回 200/401/403 都视为可达 (registry 的 /v2/ 未认证时返回 401)。
 _url_reachable() {
   local code
+  if ! command -v curl >/dev/null 2>&1; then
+    # 无 curl 时用 wget 兜底 (Ubuntu Server 未必预装 curl)
+    if command -v wget >/dev/null 2>&1; then
+      wget -q --spider --timeout="${2:-5}" "$1" 2>/dev/null
+      return $?
+    fi
+    return 1
+  fi
   code=$(curl -s -o /dev/null -m "${2:-5}" -w '%{http_code}' "$1" 2>/dev/null || echo 000)
   case "$code" in 200|401|403) return 0 ;; *) return 1 ;; esac
 }
@@ -143,24 +151,30 @@ else
 fi
 
 log "检查 Docker 容器引擎..."
+# 自举: 新服务器上未安装 Docker 时自动安装 (使用系统 apt 源，海外机器直接可用)
 if ! command -v docker >/dev/null 2>&1; then
-  fail "未检测到 docker"
-  echo "    请先执行宿主环境安装脚本 (会自动安装 Docker 与 Compose):"
-  echo "      chmod +x ./scripts/setup_host_tools_linux.sh"
-  echo "      sudo ./scripts/setup_host_tools_linux.sh"
-  echo "    安装完成后【重新登录】(使 docker 用户组生效) 并再次运行 ./start.sh"
-  exit 1
-fi
-if ! docker info >/dev/null 2>&1; then
-  # 已安装但当前用户无权限访问 docker.sock：新加入 docker 组后需要重新登录
-  if id -nG 2>/dev/null | grep -qw docker; then
-    fail "Docker 引擎不可用，请启动 Docker 服务: sudo systemctl start docker"
+  warn "未检测到 docker，开始自动安装 (docker.io + docker-compose-v2)..."
+  SUDO_PREFIX=""
+  [ "$(id -u)" != "0" ] && SUDO_PREFIX="sudo"
+  $SUDO_PREFIX env DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+  if $SUDO_PREFIX env DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2 curl; then
+    ok "Docker 安装完成"
+  elif $SUDO_PREFIX env DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose curl; then
+    ok "Docker 安装完成 (docker-compose)"
   else
-    fail "当前用户不在 docker 组，无法访问 Docker 守护进程"
-    echo "    执行以下命令后【重新登录】再运行 ./start.sh:"
-    echo "      sudo usermod -aG docker $(id -un)"
-    echo "      # 或者本次直接用: sudo -E ./start.sh"
+    fail "Docker 自动安装失败，请手动安装后重试"
+    exit 1
   fi
+  $SUDO_PREFIX systemctl enable --now docker 2>/dev/null || true
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  # 已安装但当前用户无权访问 docker.sock：自动提权重新执行本脚本
+  if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then
+    log "当前用户无权访问 Docker，自动使用 sudo 重新执行..."
+    exec sudo -E bash "$PROJECT_ROOT/scripts/start.sh" "$@"
+  fi
+  fail "Docker 引擎不可用，请启动 Docker 服务: sudo systemctl start docker"
   exit 1
 fi
 ok "Docker 引擎就绪: $(docker --version)"
@@ -314,20 +328,27 @@ section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock + All
 
 # 以宿主机当前用户身份运行容器，保证 allure-results 等挂载目录的属主与宿主机一致。
 # 否则 Allure/test-runner 容器以 root 写入后，普通用户再跑 pytest 会 PermissionError。
-export QA_UID="${QA_UID:-$(id -u)}"
-export QA_GID="${QA_GID:-$(id -g)}"
+# 通过 sudo 自举运行时，用 SUDO_UID/SUDO_GID 取回真实用户，避免产物变成 root 所有。
+QA_REAL_UID="${SUDO_UID:-$(id -u)}"
+QA_REAL_GID="${SUDO_GID:-$(id -g)}"
+export QA_UID="${QA_UID:-$QA_REAL_UID}"
+export QA_GID="${QA_GID:-$QA_REAL_GID}"
 
 # 预创建挂载目录，避免 Docker 以 root 创建后普通用户无权写入
 mkdir -p "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/mock-schemas" "$PROJECT_ROOT/sql" 2>/dev/null || true
+# sudo 模式下 mkdir 产生的 root 属主目录需要交还给真实用户
+if [ "$(id -u)" = "0" ] && [ "$QA_REAL_UID" != "0" ]; then
+  chown -R "$QA_REAL_UID:$QA_REAL_GID" "$PROJECT_ROOT/allure-results" 2>/dev/null || true
+fi
 
 # 历史运行可能已把 allure-results 写成 root:root，普通用户无法覆盖。
 # 检测到不可写时用 sudo 修复属主（旧版本容器的遗留状态）。
 if [ -d "$PROJECT_ROOT/allure-results" ] && [ ! -w "$PROJECT_ROOT/allure-results" ]; then
   warn "allure-results 当前用户不可写 (可能被历史 root 容器写入)，尝试修正属主..."
-  if sudo -n chown -R "$(id -u):$(id -g)" "$PROJECT_ROOT/allure-results" 2>/dev/null; then
-    ok "已修正 allure-results 属主为 $(id -un)"
+  if sudo -n chown -R "$QA_REAL_UID:$QA_REAL_GID" "$PROJECT_ROOT/allure-results" 2>/dev/null; then
+    ok "已修正 allure-results 属主"
   else
-    warn "无法自动修正，请手动执行: sudo chown -R $(id -u):$(id -g) $PROJECT_ROOT/allure-results"
+    warn "无法自动修正，请手动执行: sudo chown -R $QA_REAL_UID:$QA_REAL_GID $PROJECT_ROOT/allure-results"
   fi
 fi
 
