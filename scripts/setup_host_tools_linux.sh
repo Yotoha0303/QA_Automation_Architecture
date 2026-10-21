@@ -63,24 +63,44 @@ if ! command -v docker &> /dev/null; then
     DOCKER_OK=false
 
     # 首选: Docker 官方源 (download.docker.com)
-    if curl -fsSL --connect-timeout 10 --max-time 60 https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc 2>/dev/null; then
+    # apt-get 本身没有可靠的超时控制，官方源在部分网络下只有 ~20KB/s 而不会报错，
+    # 会导致脚本挂起数小时。先测速，太慢直接跳过；再用 timeout 兜底。
+    DOCKER_APT_TIMEOUT=${DOCKER_APT_TIMEOUT:-900}
+    DOCKER_MIN_SPEED=${DOCKER_MIN_SPEED:-200000}   # 字节/秒，低于此值视为不可用
+    docker_repo_speed=0
+    if command -v curl &> /dev/null; then
+        docker_repo_speed=$(curl -s -o /dev/null -m 10 -r 0-2000000 \
+            -w '%{speed_download}' "https://download.docker.com/linux/ubuntu/dists/$UBUNTU_CODENAME/Release" 2>/dev/null || echo 0)
+        docker_repo_speed=${docker_repo_speed%.*}
+    fi
+
+    if [ "${docker_repo_speed:-0}" -lt "$DOCKER_MIN_SPEED" ]; then
+        echo "[!] Docker 官方源速度过低 (${docker_repo_speed} B/s < ${DOCKER_MIN_SPEED} B/s)，跳过官方源"
+    elif curl -fsSL --connect-timeout 10 --max-time 60 https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc 2>/dev/null; then
         chmod a+r /etc/apt/keyrings/docker.asc
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $UBUNTU_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-        if apt-get update -y >/dev/null 2>&1 && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+        if timeout "$DOCKER_APT_TIMEOUT" apt-get update -y >/dev/null 2>&1 \
+           && timeout "$DOCKER_APT_TIMEOUT" apt-get install -y -o Dpkg::Use-Pty=0 docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
             DOCKER_OK=true
+        else
+            echo "[!] Docker 官方源安装超时 (>${DOCKER_APT_TIMEOUT}s) 或失败"
         fi
     fi
 
     # 回退: 发行版官方仓库 (速度慢或官方源不可用时的兜底)
     if [ "$DOCKER_OK" != true ]; then
-        echo "[!] Docker 官方源安装失败或不可用，回退到发行版仓库 (docker.io + docker-compose-v2)..."
+        echo "[!] 回退到发行版仓库 (docker.io + docker-compose-v2)..."
         rm -f /etc/apt/sources.list.d/docker.list
         apt-get update -y
-        apt-get install -y docker.io docker-compose-v2 || apt-get install -y docker.io docker-compose
-        DOCKER_OK=true
+        if apt-get install -y docker.io docker-compose-v2; then
+            DOCKER_OK=true
+        else
+            apt-get install -y docker.io docker-compose || true
+        fi
     fi
 
-    if [ "$DOCKER_OK" = true ] && command -v docker &> /dev/null; then
+    if command -v docker &> /dev/null; then
+        DOCKER_OK=true
         REAL_USER=${SUDO_USER:-$USER}
         if [ "$REAL_USER" != "root" ]; then
             usermod -aG docker "$REAL_USER" || true
