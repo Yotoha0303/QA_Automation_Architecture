@@ -226,30 +226,32 @@ ensure_build_base_image() {
   if docker image inspect "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
     return 0
   fi
-  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
-    ok "Playwright 基础镜像已就绪"
-    return 0
-  fi
-  # MCR 的镜像源入口格式不是 <mirror>/mcr.microsoft.com/...，而是分 registry 域名。
-  # DaoCloud 的 MCR 入口: mcr.m.daocloud.io/<repo> (去掉 mcr.microsoft.com/ 前缀)
-  local candidates="mcr.m.daocloud.io/playwright/python:v1.48.0-noble"
+
+  # 顺序: 镜像源 -> 直连。
+  # MCR 直连在国内多数网络下只有 ~100KB/s，645MB 需要 1 小时以上，所以先试镜像源。
+  # MCR 的镜像源格式不是 <mirror>/mcr.microsoft.com/...，而是分 registry 域名，
+  # DaoCloud 的入口: mcr.m.daocloud.io/<repo> (去掉 mcr.microsoft.com/ 前缀)。
   local cand
   IFS=',' read -ra _mcr_mirrors <<< "${QA_MCR_MIRRORS:-mcr.m.daocloud.io}"
-  candidates=""
   for cand in "${_mcr_mirrors[@]}"; do
     cand="${cand// /}"
     [ -z "$cand" ] && continue
-    candidates="$candidates${candidates:+,}$cand/playwright/python:v1.48.0-noble"
-  done
-  IFS=',' read -ra _cands <<< "$candidates"
-  for cand in "${_cands[@]}"; do
-    warn "尝试 MCR 镜像源: $cand ..."
-    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$cand" >/dev/null 2>&1; then
-      docker tag "$cand" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
-      ok "已通过镜像源拉取 Playwright 基础镜像: $cand"
+    local repo="${cand}/playwright/python:v1.48.0-noble"
+    warn "尝试 MCR 镜像源拉取基础镜像: $repo ..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$repo" >/dev/null 2>&1; then
+      docker tag "$repo" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
+      ok "已通过镜像源拉取 Playwright 基础镜像: $repo"
       return 0
     fi
+    warn "镜像源未在 ${QA_PULL_TIMEOUT:-600}s 内完成，继续下一个"
   done
+
+  warn "镜像源均不可用，尝试直连 MCR (可能很慢)..."
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+    ok "Playwright 基础镜像已就绪 (直连)"
+    return 0
+  fi
+
   warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
   return 0
 }
