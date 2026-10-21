@@ -271,7 +271,9 @@ ensure_build_base_image() {
       ok "Playwright 基础镜像已就绪 (直连 MCR)"
       return 0
     fi
-    warn "直连 MCR 未在 ${QA_PULL_TIMEOUT:-600}s 内完成"
+    # 海外机器连不上国内镜像源是常态，不再回退探测，直接交给 build 重试
+    warn "直连 MCR 未在 ${QA_PULL_TIMEOUT:-600}s 内完成，交由构建阶段重试"
+    return 0
   fi
 
   # cn 档位: 先试 MCR 专用镜像源。
@@ -380,7 +382,15 @@ if ! docker images -q qa-runtime:local 2>/dev/null | grep -q .; then
   else
     warn "GHCR 预编译镜像未拉取成功 (失败或超过 ${PULL_TIMEOUT}s)，正在执行本地自动化构建..."
     ensure_build_base_image
-    docker compose -f "$COMPOSE_FILE" build test-runner
+    if ! docker compose -f "$COMPOSE_FILE" build test-runner; then
+      fail "扫描本地构建失败"
+      echo "    常见原因:"
+      echo "      1. 无法访问 mcr.microsoft.com (基础镜像 mcr.microsoft.com/playwright/python:v1.48.0-noble 拉取失败)"
+      echo "      2. Docker daemon 未配置代理，或代理不可达"
+      echo "    可先手动验证: docker pull $PLAYWRIGHT_BASE_IMAGE"
+      echo "    若使用代理，请同时为 systemd 中的 docker 配置 HTTP_PROXY/HTTPS_PROXY"
+      exit 1
+    fi
   fi
 fi
 ok "测试运行时镜像已就绪: qa-runtime:local"
