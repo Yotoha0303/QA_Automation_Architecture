@@ -201,7 +201,7 @@ sudo ./scripts/setup_host_tools_linux.sh
 
 自动探测规则：**上游可达**（MCR + Docker Hub）即判定为 `global`，全部走官方源；上游不可达但国内镜像站可达则判定为 `cn`。海外机器通常自动走 `global`，无需额外参数。
 
-> **前置条件**：宿主机需自备 `git` 与 `docker`（或先执行 `scripts/setup_host_tools_linux.sh` 安装）。`git clone` 之后即可直接运行启动脚本。
+> **前置条件**：宿主机需自备 `git`。`git clone` 之后直接运行 `./start.sh` 即可——脚本会在 Docker 缺失时自动安装（`docker.io` + `docker-compose-v2`），在权限不足时自动提权，无需提前手工准备 Docker。桌面工具（VS Code / Wireshark / Apifox）为可选项，需要时再执行 `scripts/setup_host_tools_linux.sh`。
 
 ```powershell
 # Windows
