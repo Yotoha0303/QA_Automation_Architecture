@@ -230,23 +230,26 @@ ensure_build_base_image() {
     ok "Playwright 基础镜像已就绪"
     return 0
   fi
-  local mirrored
-  IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
-  # 同样先探活，避免在死源上白等 QA_PULL_TIMEOUT
-  if [ "${_MIRROR_RESOLVED:-0}" = "0" ]; then
-    _MIRROR_RESOLVED=1
-    resolve_usable_mirror || true
-  fi
-  if [ -z "${_USABLE_MIRROR:-}" ]; then
-    warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
-    return 0
-  fi
-  mirrored="$_USABLE_MIRROR/mcr.microsoft.com/playwright/python:v1.48.0-noble"
-  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
-    docker tag "$mirrored" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
-    ok "已通过 $_USABLE_MIRROR 拉取 Playwright 基础镜像"
-    return 0
-  fi
+  # MCR 的镜像源入口格式不是 <mirror>/mcr.microsoft.com/...，而是分 registry 域名。
+  # DaoCloud 的 MCR 入口: mcr.m.daocloud.io/<repo> (去掉 mcr.microsoft.com/ 前缀)
+  local candidates="mcr.m.daocloud.io/playwright/python:v1.48.0-noble"
+  local cand
+  IFS=',' read -ra _mcr_mirrors <<< "${QA_MCR_MIRRORS:-mcr.m.daocloud.io}"
+  candidates=""
+  for cand in "${_mcr_mirrors[@]}"; do
+    cand="${cand// /}"
+    [ -z "$cand" ] && continue
+    candidates="$candidates${candidates:+,}$cand/playwright/python:v1.48.0-noble"
+  done
+  IFS=',' read -ra _cands <<< "$candidates"
+  for cand in "${_cands[@]}"; do
+    warn "尝试 MCR 镜像源: $cand ..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$cand" >/dev/null 2>&1; then
+      docker tag "$cand" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
+      ok "已通过镜像源拉取 Playwright 基础镜像: $cand"
+      return 0
+    fi
+  done
   warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
   return 0
 }
