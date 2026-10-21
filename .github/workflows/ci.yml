@@ -10,6 +10,10 @@ on:
 jobs:
   integration-tests:
     runs-on: ubuntu-latest
+    env:
+      # CI runner 以 root 运行，显式固定为 0:0，避免与宿主机 UID 注入逻辑冲突
+      QA_UID: "0"
+      QA_GID: "0"
     steps:
       - name: 检出代码
         uses: actions/checkout@v4

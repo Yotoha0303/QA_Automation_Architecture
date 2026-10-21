@@ -87,8 +87,27 @@ rm -rf "$PROJECT_ROOT/.pytest_cache" \
        "$PROJECT_ROOT/.qa_network_profile" || true
 
 if [ "$KEEP_RESULTS" = false ]; then
-  rm -rf "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/allure-reports" || true
-  ok "已清理 allure-results 与 allure-reports"
+  # 容器可能以 root 身份写入过 (旧版本镜像/未注入 QA_UID 的场景)，导致普通用户
+  # 无法删除。先尝试无需权限的删除，失败时再用 sudo 兜底，并如实报告结果。
+  if rm -rf "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/allure-reports" 2>/dev/null; then
+    ok "已清理 allure-results 与 allure-reports"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    warn "allure-results 属主为 root，使用 sudo 清理..."
+    if sudo -n rm -rf "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/allure-reports"; then
+      ok "已通过 sudo 清理 allure-results 与 allure-reports"
+    else
+      warn "无法清理 allure-results，请手动执行: sudo rm -rf $PROJECT_ROOT/allure-results"
+    fi
+  elif command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
+    warn "allure-results 属主为 root，需要 sudo 权限清理..."
+    if sudo rm -rf "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/allure-reports"; then
+      ok "已通过 sudo 清理 allure-results 与 allure-reports"
+    else
+      warn "无法清理 allure-results，请手动执行: sudo rm -rf $PROJECT_ROOT/allure-results"
+    fi
+  else
+    warn "无法清理 allure-results (权限不足)，请手动执行: sudo rm -rf $PROJECT_ROOT/allure-results"
+  fi
 fi
 
 # 递归清理 __pycache__

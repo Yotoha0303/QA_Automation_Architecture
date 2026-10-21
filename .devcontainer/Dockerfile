@@ -67,12 +67,25 @@ RUN if [ "$QA_CN_BUILD" = "1" ]; then \
         && apt-get clean && rm -rf /var/lib/apt/lists/*; \
     fi
 
-# 5. 全局安装 apifox-cli（npm 源随 QA_CN_BUILD 切换）
-RUN if [ "$QA_CN_BUILD" = "1" ]; then \
-        npm install -g apifox-cli --registry=https://registry.npmmirror.com; \
+# 5. 全局安装 apifox-cli（可选组件，npm 源随 QA_CN_BUILD 切换）
+#    apifox-cli 依赖 ibm_db / kerberos / oracledb 等需要编译或下载大体积驱动的包，
+#    在受限网络下会长时间挂起。它只用于运行 Apifox 导出的接口脚本，本仓库的
+#    测试套件并不使用，因此这里限时安装、失败不作为构建失败条件。
+#    需要时可在容器内手动安装: npm install -g apifox-cli
+ARG APIFOX_CLI_TIMEOUT=300
+RUN set +e; \
+    if [ "$QA_CN_BUILD" = "1" ]; then \
+        timeout "$APIFOX_CLI_TIMEOUT" npm install -g apifox-cli --omit=optional --registry=https://registry.npmmirror.com; \
     else \
-        npm install -g apifox-cli; \
-    fi
+        timeout "$APIFOX_CLI_TIMEOUT" npm install -g apifox-cli --omit=optional; \
+    fi; \
+    if command -v apifox >/dev/null 2>&1; then \
+        echo "apifox-cli installed"; \
+    else \
+        echo "WARN: apifox-cli not installed (optional, tests do not require it)"; \
+        npm cache clean --force >/dev/null 2>&1 || true; \
+    fi; \
+    exit 0
 
 # 6. Python 测试套件（pip 源随 QA_CN_BUILD 切换）
 COPY requirements.txt /tmp/requirements.txt
@@ -82,8 +95,19 @@ RUN if [ "$QA_CN_BUILD" = "1" ]; then \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
 # 7. 预装 Playwright 浏览器内核 (Chromium, Firefox, WebKit)
-#    基础镜像已内置，此处确保与包版本匹配；国内构建可另行设置 PLAYWRIGHT_DOWNLOAD_HOST
-RUN playwright install --with-deps
+#    国内构建: 走 npmmirror 二进制源 (实测从 17 分钟未完成缩短至 ~150 秒)
+#    官方构建: 走默认 cdn.playwright.dev
+#    也可在构建时覆盖: docker compose build --build-arg PLAYWRIGHT_DOWNLOAD_HOST=<url>
+ARG PLAYWRIGHT_DOWNLOAD_HOST=""
+RUN if [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then \
+        ENV_HOST="$PLAYWRIGHT_DOWNLOAD_HOST"; \
+    elif [ "$QA_CN_BUILD" = "1" ]; then \
+        ENV_HOST="https://cdn.npmmirror.com/binaries/playwright"; \
+    else \
+        ENV_HOST=""; \
+    fi \
+    && if [ -n "$ENV_HOST" ]; then PLAYWRIGHT_DOWNLOAD_HOST="$ENV_HOST" playwright install --with-deps; \
+       else playwright install --with-deps; fi
 
 WORKDIR /workspace
 CMD ["/bin/bash"]

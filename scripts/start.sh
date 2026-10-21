@@ -68,11 +68,34 @@ warn() { echo -e "    ${C_YELLOW}[!] $*${C_RESET}"; }
 fail() { echo -e "    ${C_RED}[×] $*${C_RESET}"; }
 
 # 网络档位判定
+#   上游可达 (MCR / Docker Hub / GHCR) -> global，全部走官方源
+#   上游不可达但国内镜像站可达         -> cn，构建走国内源
+# 说明: 不能用"国内镜像站能连上"来判断 cn —— 海外机器通常也能连上，会被误判。
+# 返回 200/401/403 都视为可达 (registry 的 /v2/ 未认证时返回 401)。
+_url_reachable() {
+  local code
+  if ! command -v curl >/dev/null 2>&1; then
+    # 无 curl 时用 wget 兜底 (Ubuntu Server 未必预装 curl)
+    if command -v wget >/dev/null 2>&1; then
+      wget -q --spider --timeout="${2:-5}" "$1" 2>/dev/null
+      return $?
+    fi
+    return 1
+  fi
+  code=$(curl -s -o /dev/null -m "${2:-5}" -w '%{http_code}' "$1" 2>/dev/null || echo 000)
+  case "$code" in 200|401|403) return 0 ;; *) return 1 ;; esac
+}
 detect_profile() {
-  local cn_ok=false proxy_ok=false
-  curl -fsS -m 5 -o /dev/null https://registry.npmmirror.com 2>/dev/null && cn_ok=true || true
-  curl -fsS -m 5 -o /dev/null https://ghfast.top 2>/dev/null && proxy_ok=true || true
-  if [ "$cn_ok" = true ] || [ "$proxy_ok" = true ]; then echo "cn"; else echo "global"; fi
+  if _url_reachable https://mcr.microsoft.com/v2/ \
+     && _url_reachable https://registry-1.docker.io/v2/ ; then
+    echo "global"
+    return
+  fi
+  if _url_reachable https://registry.npmmirror.com; then
+    echo "cn"
+    return
+  fi
+  echo "global"
 }
 
 PROFILE="$MIRROR_MODE"
@@ -128,14 +151,209 @@ else
 fi
 
 log "检查 Docker 容器引擎..."
-command -v docker >/dev/null 2>&1 || { fail "未检测到 docker，请先安装 Docker CE"; exit 1; }
-docker info >/dev/null 2>&1 || { fail "Docker 引擎不可用，请启动 Docker 服务 (sudo systemctl start docker)"; exit 1; }
+# 自举: 新服务器上未安装 Docker 时自动安装 (使用系统 apt 源，海外机器直接可用)
+if ! command -v docker >/dev/null 2>&1; then
+  warn "未检测到 docker，开始自动安装 (docker.io + docker-compose-v2)..."
+  SUDO_PREFIX=""
+  [ "$(id -u)" != "0" ] && SUDO_PREFIX="sudo"
+  $SUDO_PREFIX env DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+  if $SUDO_PREFIX env DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2 curl; then
+    ok "Docker 安装完成"
+  elif $SUDO_PREFIX env DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose curl; then
+    ok "Docker 安装完成 (docker-compose)"
+  else
+    fail "Docker 自动安装失败，请手动安装后重试"
+    exit 1
+  fi
+  $SUDO_PREFIX systemctl enable --now docker 2>/dev/null || true
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  # 已安装但当前用户无权访问 docker.sock：自动提权重新执行本脚本
+  if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then
+    log "当前用户无权访问 Docker，自动使用 sudo 重新执行..."
+    exec sudo -E bash "$PROJECT_ROOT/scripts/start.sh" "$@"
+  fi
+  fail "Docker 引擎不可用，请启动 Docker 服务: sudo systemctl start docker"
+  exit 1
+fi
 ok "Docker 引擎就绪: $(docker --version)"
+
+# Docker Hub 镜像加速：国内网络下 registry-1.docker.io 常被拒绝或极慢，
+# 而 --mirror cn 只影响构建阶段，不影响 docker pull。
+# 这里不依赖 /etc/docker/daemon.json (需要 sudo 重启)，而是在拉取失败时
+# 自动改用镜像前缀拉取，再 tag 回 compose 里写的原始镜像名。
+REGISTRY_MIRRORS="${QA_REGISTRY_MIRRORS:-docker.1ms.run,docker.m.daocloud.io,docker.1panel.live}"
+# 单源探活超时：先用极小的 hello-world 判断该源是否可用，避免在死源上
+# 让每个镜像都白等 QA_PULL_TIMEOUT 秒 (3 源 × 3 镜像 × 600s = 1.5 小时)
+MIRROR_PROBE_TIMEOUT="${QA_MIRROR_PROBE_TIMEOUT:-25}"
+# 探活用的真实镜像：必须能取到 manifest 才算可用 (hello-world 可能命中缓存而误判)
+MIRROR_PROBE_IMAGE="library/busybox"
+MIRROR_PROBE_TAG="latest"
+
+# 探测镜像源是否可用：HEAD 目标镜像 manifest，必须返回 200
+# 注意：仅看 /v2/ 是否 401 会误判 —— 部分镜像源 /v2/ 返回 401 但 token 服务不可用，
+# 实际拉取时会永久卡住 (例如 docker.1ms.run)
+_mirror_alive() {
+  local m="$1" code
+  code=$(curl -s -o /dev/null -m "$MIRROR_PROBE_TIMEOUT" -w '%{http_code}' \
+    -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' \
+    "https://$m/v2/$MIRROR_PROBE_IMAGE/manifests/$MIRROR_PROBE_TAG" 2>/dev/null || echo 000)
+  [ "$code" = "200" ]
+}
+
+# 解析出第一个可用镜像源，结果写入 _USABLE_MIRROR (空表示都不可用)
+# global 档位 (上游可达) 直接跳过镜像源，避免在无效源上浪费时间。
+resolve_usable_mirror() {
+  _USABLE_MIRROR=""
+  if [ "${PROFILE:-global}" = "global" ]; then
+    return 1
+  fi
+  local m
+  IFS=',' read -ra _mirrors <<< "$REGISTRY_MIRRORS"
+  for m in "${_mirrors[@]}"; do
+    m="${m// /}"
+    [ -z "$m" ] && continue
+    if _mirror_alive "$m"; then
+      _USABLE_MIRROR="$m"
+      ok "镜像加速源可用: $m"
+      return 0
+    fi
+    warn "镜像加速源不可用 (${MIRROR_PROBE_TIMEOUT}s 内未完成探活): $m"
+  done
+  return 1
+}
+
+# 拉取镜像：先直连，失败后使用探活通过的镜像前缀
+pull_image() {
+  local image="$1"
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    return 0
+  fi
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$image" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -z "${_USABLE_MIRROR:-}" ]; then
+    if [ "${_MIRROR_RESOLVED:-0}" = "0" ]; then
+      _MIRROR_RESOLVED=1
+      resolve_usable_mirror || true
+    fi
+  fi
+  if [ -z "${_USABLE_MIRROR:-}" ]; then
+    fail "无法拉取镜像: $image (直连失败，且无可用镜像加速源)"
+    return 1
+  fi
+  local mirrored="${image#docker.io/}"
+  # Docker Hub 官方镜像需要 library/ 前缀，镜像源按完整 registry 路径解析
+  case "$mirrored" in
+    */*) : ;;
+    *) mirrored="library/$mirrored" ;;
+  esac
+  mirrored="$_USABLE_MIRROR/$mirrored"
+  warn "直连拉取 $image 失败，改用镜像源 $_USABLE_MIRROR ..."
+  if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$mirrored" >/dev/null 2>&1; then
+    docker tag "$mirrored" "$image" 2>/dev/null || true
+    ok "已通过 $_USABLE_MIRROR 拉取并标记为 $image"
+    return 0
+  fi
+  fail "无法拉取镜像: $image (直连与镜像源均失败)"
+  return 1
+}
+
+ensure_base_images() {
+  local images="postgres:16-alpine stoplight/prism:5 frankescobar/allure-docker-service:latest"
+  local img
+  # 直连失败才需要镜像源，先探活一次，避免每个镜像都重复试错
+  for img in $images; do
+    pull_image "$img" || return 1
+  done
+  ok "基础镜像已就绪 (postgres / prism / allure)"
+}
+
+# 构建用的基础镜像来自 MCR，不经过 registry-mirrors，国内网络常拉不动。
+# 构建前预拉取并打上 Dockerfile 里写的原始标签，命中本地缓存后 build 不再联网。
+PLAYWRIGHT_BASE_IMAGE="mcr.microsoft.com/playwright/python:v1.48.0-noble"
+ensure_build_base_image() {
+  if docker image inspect "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # global 档位 (海外/上游可达): 直接拉 MCR，不走任何镜像源
+  if [ "${PROFILE:-global}" = "global" ]; then
+    log "拉取 Playwright 基础镜像 (直连 MCR)..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+      ok "Playwright 基础镜像已就绪 (直连 MCR)"
+      return 0
+    fi
+    # 海外机器连不上国内镜像源是常态，不再回退探测，直接交给 build 重试
+    warn "直连 MCR 未在 ${QA_PULL_TIMEOUT:-600}s 内完成，交由构建阶段重试"
+    return 0
+  fi
+
+  # cn 档位: 先试 MCR 专用镜像源。
+  # MCR 的镜像源格式不是 <mirror>/mcr.microsoft.com/...，而是分 registry 域名，
+  # DaoCloud 的入口: mcr.m.daocloud.io/<repo> (去掉 mcr.microsoft.com/ 前缀)。
+  local cand
+  IFS=',' read -ra _mcr_mirrors <<< "${QA_MCR_MIRRORS:-mcr.m.daocloud.io}"
+  for cand in "${_mcr_mirrors[@]}"; do
+    cand="${cand// /}"
+    [ -z "$cand" ] && continue
+    local repo="${cand}/playwright/python:v1.48.0-noble"
+    warn "尝试 MCR 镜像源拉取基础镜像: $repo ..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$repo" >/dev/null 2>&1; then
+      docker tag "$repo" "$PLAYWRIGHT_BASE_IMAGE" 2>/dev/null || true
+      ok "已通过镜像源拉取 Playwright 基础镜像: $repo"
+      return 0
+    fi
+    warn "镜像源未在 ${QA_PULL_TIMEOUT:-600}s 内完成，继续下一个"
+  done
+
+  # 兜底: 直连 (global 档位已试过则跳过)
+  if [ "${PROFILE:-global}" != "global" ]; then
+    warn "镜像源均不可用，尝试直连 MCR (可能很慢)..."
+    if timeout "${QA_PULL_TIMEOUT:-600}" docker pull "$PLAYWRIGHT_BASE_IMAGE" >/dev/null 2>&1; then
+      ok "Playwright 基础镜像已就绪 (直连)"
+      return 0
+    fi
+  fi
+
+  warn "Playwright 基础镜像未能预拉取，构建时将由 Docker 自行拉取 (可能失败)"
+  return 0
+}
 
 # ------------------------------------------------------------------------------
 # 【层级 2: 测试编排与存储依赖】
 # ------------------------------------------------------------------------------
 section "【层级 2: 测试编排与存储依赖 (PostgreSQL + Prism Mock + Allure Report)】"
+
+# 以宿主机当前用户身份运行容器，保证 allure-results 等挂载目录的属主与宿主机一致。
+# 否则 Allure/test-runner 容器以 root 写入后，普通用户再跑 pytest 会 PermissionError。
+# 通过 sudo 自举运行时，用 SUDO_UID/SUDO_GID 取回真实用户，避免产物变成 root 所有。
+QA_REAL_UID="${SUDO_UID:-$(id -u)}"
+QA_REAL_GID="${SUDO_GID:-$(id -g)}"
+export QA_UID="${QA_UID:-$QA_REAL_UID}"
+export QA_GID="${QA_GID:-$QA_REAL_GID}"
+
+# 预创建挂载目录，避免 Docker 以 root 创建后普通用户无权写入
+mkdir -p "$PROJECT_ROOT/allure-results" "$PROJECT_ROOT/mock-schemas" "$PROJECT_ROOT/sql" 2>/dev/null || true
+# sudo 模式下 mkdir 产生的 root 属主目录需要交还给真实用户
+if [ "$(id -u)" = "0" ] && [ "$QA_REAL_UID" != "0" ]; then
+  chown -R "$QA_REAL_UID:$QA_REAL_GID" "$PROJECT_ROOT/allure-results" 2>/dev/null || true
+fi
+
+# 历史运行可能已把 allure-results 写成 root:root，普通用户无法覆盖。
+# 检测到不可写时用 sudo 修复属主（旧版本容器的遗留状态）。
+if [ -d "$PROJECT_ROOT/allure-results" ] && [ ! -w "$PROJECT_ROOT/allure-results" ]; then
+  warn "allure-results 当前用户不可写 (可能被历史 root 容器写入)，尝试修正属主..."
+  if sudo -n chown -R "$QA_REAL_UID:$QA_REAL_GID" "$PROJECT_ROOT/allure-results" 2>/dev/null; then
+    ok "已修正 allure-results 属主"
+  else
+    warn "无法自动修正，请手动执行: sudo chown -R $QA_REAL_UID:$QA_REAL_GID $PROJECT_ROOT/allure-results"
+  fi
+fi
+
+log "预拉取基础镜像 (失败时自动切换镜像加速源)..."
+ensure_base_images || { fail "基础镜像准备失败，请检查网络或设置 QA_REGISTRY_MIRRORS"; exit 1; }
 
 log "启动基础容器服务 (PostgreSQL 16 + Prism HTTP Mock + Allure Report)..."
 docker compose -f "$COMPOSE_FILE" up -d postgres-db mock-service allure
@@ -169,14 +387,31 @@ fi
 section "【层级 3: 自动化测试运行时 (Dev Container 统一镜像)】"
 
 PREBUILT_IMAGE="${QA_RUNTIME_IMAGE:-ghcr.io/yotoha0303/qa-runtime:latest}"
-if ! docker images -q qa-runtime:local 2>/dev/null | grep -q . && ! docker images -q "$PREBUILT_IMAGE" 2>/dev/null | grep -q .; then
-  log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE)..."
-  if docker pull "$PREBUILT_IMAGE" 2>/dev/null; then
+# 拉取超时（秒）：避免网络"能连上但极慢"时无限挂起，永远不进入本地构建分支。
+# global 档位 (海外/上游可达) 给更长的超时：镜像是 6.5GB，正常网络也需要数分钟到十几分钟。
+if [ "${PROFILE:-global}" = "global" ]; then
+  PULL_TIMEOUT="${QA_PULL_TIMEOUT:-3600}"
+else
+  PULL_TIMEOUT="${QA_PULL_TIMEOUT:-600}"
+fi
+if ! docker images -q qa-runtime:local 2>/dev/null | grep -q .; then
+  log "未检测到本地运行时镜像，优先从 GHCR 拉取预编译镜像 ($PREBUILT_IMAGE, 超时 ${PULL_TIMEOUT}s)..."
+  # GHCR 不走 registry mirror (多数公共镜像源不支持 GHCR)，仅加超时兜底
+  if timeout "$PULL_TIMEOUT" docker pull "$PREBUILT_IMAGE" 2>/dev/null; then
     docker tag "$PREBUILT_IMAGE" qa-runtime:local 2>/dev/null || true
     ok "成功拉取并关联 GHCR 预编译镜像: $PREBUILT_IMAGE"
   else
-    warn "GHCR 预编译镜像未拉取成功，正在执行本地自动化构建..."
-    docker compose -f "$COMPOSE_FILE" build test-runner
+    warn "GHCR 预编译镜像未拉取成功 (失败或超过 ${PULL_TIMEOUT}s)，正在执行本地自动化构建..."
+    ensure_build_base_image
+    if ! docker compose -f "$COMPOSE_FILE" build test-runner; then
+      fail "本地构建失败"
+      echo "    常见原因:"
+      echo "      1. 无法访问 mcr.microsoft.com (基础镜像 mcr.microsoft.com/playwright/python:v1.48.0-noble 拉取失败)"
+      echo "      2. Docker daemon 未配置代理，或代理不可达"
+      echo "    可先手动验证: docker pull $PLAYWRIGHT_BASE_IMAGE"
+      echo "    若使用代理，请同时为 systemd 中的 docker 配置 HTTP_PROXY/HTTPS_PROXY"
+      exit 1
+    fi
   fi
 fi
 ok "测试运行时镜像已就绪: qa-runtime:local"
