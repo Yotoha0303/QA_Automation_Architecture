@@ -404,7 +404,7 @@ if ! docker images -q qa-runtime:local 2>/dev/null | grep -q .; then
     warn "GHCR 预编译镜像未拉取成功 (失败或超过 ${PULL_TIMEOUT}s)，正在执行本地自动化构建..."
     ensure_build_base_image
     if ! docker compose -f "$COMPOSE_FILE" build test-runner; then
-      fail "扫描本地构建失败"
+      fail "本地构建失败"
       echo "    常见原因:"
       echo "      1. 无法访问 mcr.microsoft.com (基础镜像 mcr.microsoft.com/playwright/python:v1.48.0-noble 拉取失败)"
       echo "      2. Docker daemon 未配置代理，或代理不可达"
