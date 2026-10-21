@@ -143,8 +143,26 @@ else
 fi
 
 log "检查 Docker 容器引擎..."
-command -v docker >/dev/null 2>&1 || { fail "未检测到 docker，请先安装 Docker CE"; exit 1; }
-docker info >/dev/null 2>&1 || { fail "Docker 引擎不可用，请启动 Docker 服务 (sudo systemctl start docker)"; exit 1; }
+if ! command -v docker >/dev/null 2>&1; then
+  fail "未检测到 docker"
+  echo "    请先执行宿主环境安装脚本 (会自动安装 Docker 与 Compose):"
+  echo "      chmod +x ./scripts/setup_host_tools_linux.sh"
+  echo "      sudo ./scripts/setup_host_tools_linux.sh"
+  echo "    安装完成后【重新登录】(使 docker 用户组生效) 并再次运行 ./start.sh"
+  exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+  # 已安装但当前用户无权限访问 docker.sock：新加入 docker 组后需要重新登录
+  if id -nG 2>/dev/null | grep -qw docker; then
+    fail "Docker 引擎不可用，请启动 Docker 服务: sudo systemctl start docker"
+  else
+    fail "当前用户不在 docker 组，无法访问 Docker 守护进程"
+    echo "    执行以下命令后【重新登录】再运行 ./start.sh:"
+    echo "      sudo usermod -aG docker $(id -un)"
+    echo "      # 或者本次直接用: sudo -E ./start.sh"
+  fi
+  exit 1
+fi
 ok "Docker 引擎就绪: $(docker --version)"
 
 # Docker Hub 镜像加速：国内网络下 registry-1.docker.io 常被拒绝或极慢，

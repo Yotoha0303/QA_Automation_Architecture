@@ -148,8 +148,29 @@ echo ""
 echo "=========================================================="
 echo "【完成】Linux 宿主环境与工具链全部安装就绪！"
 echo "=========================================================="
+
+# 精确判断是否需要重新登录：docker / wireshark 组权限只在新会话生效
+REAL_USER=${SUDO_USER:-$USER}
+NEED_RELOGIN=false
+if [ "$REAL_USER" != "root" ]; then
+    for grp in docker wireshark; do
+        if getent group "$grp" >/dev/null 2>&1 && ! id -nG "$REAL_USER" 2>/dev/null | grep -qw "$grp"; then
+            NEED_RELOGIN=true
+        fi
+    done
+fi
+
+if [ "$NEED_RELOGIN" = true ]; then
+    echo ""
+    echo "[!] 需要重新登录才能使用 Docker (docker 用户组尚未对当前会话生效)"
+    echo "    方法 1: 注销后重新登录，然后运行  ./start.sh"
+    echo "    方法 2: 直接执行  newgrp docker  再运行 ./start.sh"
+    echo "    方法 3: 本次使用  sudo -E ./start.sh"
+    echo ""
+fi
+
 echo "使用提示:"
-echo "1. 请重新登录当前用户使 docker 和 wireshark 用户组权限生效。"
-echo "2. 打开 VS Code 安装插件: Dev Containers (code --install-extension ms-vscode-remote.remote-containers)"
-echo "3. 启动测试基础设施: docker compose -f docker-compose.infra.yml up -d"
+echo "1. 打开 VS Code 安装插件: Dev Containers (code --install-extension ms-vscode-remote.remote-containers)"
+echo "2. 启动测试环境: ./start.sh"
+echo "   (若上一步提示需要重新登录，请先重新登录)"
 echo "=========================================================="
